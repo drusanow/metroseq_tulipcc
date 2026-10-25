@@ -1,0 +1,50 @@
+menu "Metroseq (Tulip CC CV sequencer)"
+
+    config METRO_DAC_I2C_HZ
+        int "I2C clock for the Mabee DAC writes (Hz)"
+        default 400000
+        range 100000 400000
+        help
+            SCL speed used for every GP8413 transaction. 400 kHz makes a
+            gate/pitch write ~4x shorter than 100 kHz (about 0.1 ms vs 0.4 ms),
+            which is the latency between the scheduled time and the voltage
+            actually changing. Tulip's own mabeedac.py uses 400 kHz on this
+            bus. Drop to 100000 only if your cable/pull-ups are marginal.
+
+    config METRO_TOUCH_I2C_HZ
+        int "I2C clock for the GT911 touch controller (Hz)"
+        default 100000
+        range 100000 400000
+        help
+            Tulip's firmware runs the touch controller at 100 kHz on the R11
+            board. Touch reads only happen in gaps between CV writes, so a
+            slower touch clock never delays a gate.
+
+    config METRO_CV_SET_RANGE_10V
+        bool "Explicitly set each GP8413 to its 0-10 V range at init"
+        default y
+        help
+            Writes 0x11 to the GP8413 range register so 1 V/oct pitch is
+            correct regardless of the chip's power-on range. Turn off to leave
+            the range as the board ships (the Python sketch's default).
+
+    config METRO_DEFER_FLASH_WHILE_PLAYING
+        bool "Commit preset/project saves to flash only when stopped"
+        default y
+        help
+            Saving always updates the in-RAM bank immediately. With this on,
+            the flash write waits until the transport is stopped, so no flash
+            erase/program ever overlaps a running sequence. (With XIP from
+            PSRAM enabled the CPU keeps running during flash writes anyway;
+            this is a second layer of protection.)
+
+    config METRO_TIMING_PROBE_GPIO
+        int "Scope timing probe GPIO (-1 = off)"
+        default -1
+        help
+            Mirrors TRK1's gate onto this pin at the instant the I2C write
+            starts, so a scope on probe + DAC VOUT0 shows scheduling jitter
+            and I2C latency separately. GPIO11 (the unused MIDI OUT pin) is a
+            convenient choice; it will send garbage on MIDI OUT while enabled.
+
+endmenu

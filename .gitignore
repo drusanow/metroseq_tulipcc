@@ -1,0 +1,8 @@
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+tests/build/
+tools/ui_preview/build/
+__pycache__/
