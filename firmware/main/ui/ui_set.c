@@ -206,10 +206,12 @@ void set_page_poll(void) {
     uint32_t over1ms = g_status.late_hist[5] + g_status.late_hist[6];
     lv_label_set_text_fmt(S.timing_lbl,
                           "TIMING  gates %lu | late avg %lu us, max %lu us | >1ms %lu | "
-                          "resync %lu | i2c err %lu | touch deferred %lu",
+                          "resync %lu/%lu | i2c err %lu | touch deferred %lu",
                           (unsigned long)cnt, (unsigned long)avg,
                           (unsigned long)g_status.late_max_us, (unsigned long)over1ms,
-                          (unsigned long)g_status.resyncs, (unsigned long)g_status.i2c_errors,
+                          (unsigned long)g_status.resyncs,
+                          (unsigned long)g_status.late_gates_dropped,
+                          (unsigned long)g_status.i2c_errors,
                           (unsigned long)g_status.touch_deferred);
 }
 

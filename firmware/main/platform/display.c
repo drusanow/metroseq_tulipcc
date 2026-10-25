@@ -11,6 +11,8 @@
 // the next frame, never a gate.
 #include "display.h"
 
+#include <assert.h>
+
 #include "board.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"

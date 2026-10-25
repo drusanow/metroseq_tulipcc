@@ -53,8 +53,17 @@ extern "C" {
 // steps; this is a smooth ramp at 500 Hz, independent of glide length).
 #define SEQ_GLIDE_STEP_US     2000
 
+// A gate-on (swung / ratcheted hit) that comes due more than this late -
+// only possible after a stall - is dropped rather than flammed. Gate-offs
+// always run, so nothing can be left stuck high.
+#define SEQ_MAX_LATE_GATE_US  20000
+
 #define SEQ_MAX_EVENTS        128
-#define SEQ_MAX_ACTIONS       96
+#define SEQ_MAX_ACTIONS       192
+// advance() ends a batch when fewer than this many action slots are left
+// (one event emits at most ~12) and picks up the rest on the next call, so
+// an action can never be dropped.
+#define SEQ_ACTION_HEADROOM   32
 
 // --- output actions ------------------------------------------------------
 
@@ -78,7 +87,10 @@ typedef struct {
     uint32_t dropped;
 } seq_actions_t;
 
-static inline void seq_actions_clear(seq_actions_t *l) { l->n = 0; }
+static inline void seq_actions_clear(seq_actions_t *l) {
+    l->n = 0;
+    l->dropped = 0;
+}
 
 // --- internal event queue ---------------------------------------------------
 
@@ -126,6 +138,7 @@ typedef struct {
     uint32_t pulses;           // master pulses processed
     uint32_t resyncs;          // stalls that triggered a resync
     uint32_t queue_overflows;  // events dropped because the queue was full
+    uint32_t late_gates_dropped;
 } seq_stats_t;
 
 typedef struct {

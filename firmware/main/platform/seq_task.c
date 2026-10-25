@@ -103,8 +103,10 @@ static void wait_until(int64_t due) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         return;
     }
+    // Sleep (re-arming after any stale/spurious wake) until just before due,
+    // so the only busy time is the final WAKE_EARLY_US spin.
     int64_t wake = due - WAKE_EARLY_US;
-    if (wake > now_us()) {
+    while (now_us() < wake) {
         gptimer_alarm_config_t a = {.alarm_count = (uint64_t)wake};
         gptimer_set_alarm_action(s_timer, &a);   // fires at once if already past
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -181,16 +183,17 @@ static void cv_init_now(void) {
     }
 }
 
+static void ramp_end(void) {
+    cv_dac_all_low();
+    s_ramp_i = -1;
+    s_ramp_next = INT64_MAX;
+    g_status.cv_ready = true;
+    ESP_LOGI(TAG, "cv soft start done");
+}
+
 static void ramp_step(void) {
-    if (s_eng.playing) {   // never fight the sequencer for VOUT0
-        s_ramp_i = 2 * CV_RAMP_STEPS + 1;
-    }
     if (s_ramp_i > 2 * CV_RAMP_STEPS) {
-        cv_dac_all_low();
-        s_ramp_i = -1;
-        s_ramp_next = INT64_MAX;
-        g_status.cv_ready = true;
-        ESP_LOGI(TAG, "cv soft start done");
+        ramp_end();
         return;
     }
     int i = s_ramp_i;
@@ -204,6 +207,10 @@ static void ramp_step(void) {
 // --- commands from the UI --------------------------------------------------
 
 static void handle_cmd(uint8_t cmd, int64_t now) {
+    // PLAY during the soft start: finish it (gates low) BEFORE the engine
+    // raises the downbeat gate, never after.
+    if (cmd == CMD_TOGGLE_PLAY && !s_eng.playing && s_ramp_i >= 0) ramp_end();
+
     seq_actions_clear(&s_acts);
     pat_lock();
     switch (cmd) {
@@ -230,9 +237,6 @@ static void handle_cmd(uint8_t cmd, int64_t now) {
     execute(&s_acts);
 
     switch (cmd) {
-    case CMD_TOGGLE_PLAY:
-        if (s_ramp_i >= 0) ramp_step();   // PLAY during soft start ends it now
-        break;
     case CMD_CV_TOGGLE:
         if (!g_status.cv_enabled) {
             g_status.cv_enabled = true;
@@ -307,6 +311,7 @@ static void publish(void) {
     }
     for (int l = 0; l < NUM_MOD_LANES; l++) g_status.lane_disp[l] = s_eng.ln[l].disp_stage;
     g_status.resyncs = s_eng.stats.resyncs;
+    g_status.late_gates_dropped = s_eng.stats.late_gates_dropped;
 }
 
 // --- the task ----------------------------------------------------------------

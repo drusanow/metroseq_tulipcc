@@ -71,7 +71,11 @@ static void step(intptr_t arg) {
 static void ctrl(int x, int y, const char *name, int which) {
     ui_label(s_panel, name, x, y + 8);
     ui_btn(s_panel, "-", x + 110, 40, 40, step, which * 2, C_BTN, y, NULL);
-    s_ctrl_vals[which] = ui_label(s_panel, "", x + 162, y + 8);
+    // centred in the 50 px between the buttons so "BRWN" / "1/16" fit
+    lv_obj_t *v = s_ctrl_vals[which] = ui_label(s_panel, "", x + 150, y + 10);
+    lv_obj_set_width(v, 50);
+    lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
     ui_btn(s_panel, "+", x + 200, 40, 40, step, which * 2 + 1, C_BTN, y, NULL);
 }
 

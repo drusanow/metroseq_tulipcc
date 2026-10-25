@@ -1,6 +1,8 @@
 // ui_common.c - shared widget helpers.
 #include "ui_common.h"
 
+#include <assert.h>
+
 const uint8_t C_TRK[NUM_TRACKS] = {C_TRK0, C_TRK1};
 const uint8_t C_GATE[GATE_COUNT] = {RGB332(0, 200, 110), RGB332(70, 150, 255),
                                     RGB332(230, 200, 40), RGB332(90, 90, 100)};

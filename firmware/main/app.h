@@ -54,6 +54,7 @@ typedef struct {
     volatile uint32_t late_count;
     volatile uint64_t late_sum_us;
     volatile uint32_t resyncs;
+    volatile uint32_t late_gates_dropped;   // hits skipped after a stall
     volatile uint32_t i2c_errors;
     volatile uint32_t touch_polls;
     volatile uint32_t touch_deferred;   // polls postponed to keep a gate on time

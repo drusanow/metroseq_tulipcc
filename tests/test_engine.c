@@ -315,6 +315,95 @@ static void test_glide(void) {
     printf("slide: %d pitch updates, monotonic\n", steps);
 }
 
+// 12. Fuzz: random patterns, random live edits while playing (exactly
+//     what the UI can do), random stalls. The queue must never overflow,
+//     no action may be dropped, output time must never go backwards.
+static uint32_t frng = 12345;
+static int fr(int n) {
+    frng ^= frng << 13;
+    frng ^= frng >> 17;
+    frng ^= frng << 5;
+    return (int)(frng % (uint32_t)n);
+}
+
+static void random_edit(pattern_t *p) {
+    switch (fr(12)) {
+    case 0: p->bpm = MIN_BPM + fr(MAX_BPM - MIN_BPM + 1); break;
+    case 1: p->merge_cv = !p->merge_cv; break;
+    case 2: p->root = fr(12); p->scale_idx = fr(NUM_SCALES); break;
+    default: {
+        stage_t *s = &p->stages[fr(NUM_STAGES)];
+        track_cfg_t *t = &p->tracks[fr(NUM_TRACKS)];
+        mod_lane_cfg_t *m = &p->mods[fr(NUM_MOD_LANES)];
+        s->pitch = fr(PITCH_RANGE + 1); s->pulses = 1 + fr(8); s->gate = fr(GATE_COUNT);
+        s->slide = fr(2); s->skip = fr(4) == 0; s->ratchet = 1 + fr(8); s->prob = fr(101);
+        s->accum = fr(49) - 24;
+        t->order = fr(ORD_COUNT); t->length = 1 + fr(NUM_STAGES); t->div_i = fr(NUM_DIVS);
+        t->swing = fr(61); t->gate_pct = 5 + fr(96); t->transpose = fr(49) - 24;
+        t->octave = fr(7) - 3; t->invert = fr(2);
+        m->values[fr(NUM_STAGES)] = fr(201) - 100; m->order = fr(ORD_COUNT);
+        m->length = 1 + fr(NUM_STAGES); m->div_i = fr(NUM_DIVS); m->depth = fr(101);
+        m->dest = fr(NUM_DESTS);
+    }
+    }
+}
+
+static void test_fuzz(void) {
+    static pattern_t p;
+    uint32_t worst_q = 0, dropped = 0, backwards = 0;
+    int worst_batch = 0, dropped_reported = 0;
+    long actions = 0;
+    for (int run = 0; run < 300; run++) {
+        pattern_default(&p);
+        for (int k = 0; k < 20; k++) random_edit(&p);
+        seq_engine_init(&eng, &p, run + 1);
+        seq_actions_clear(&acts);
+        seq_engine_start(&eng, 0, &acts);
+        int64_t t = 0, next_edit = 50000, last_out;
+        while (t < 20LL * 1000000) {
+            t = seq_engine_next_due(&eng);
+            if (t > next_edit) {
+                t = next_edit;
+                random_edit(&p);
+                if (fr(40) == 0) {   // a UI command
+                    seq_actions_clear(&acts);
+                    switch (fr(3)) {
+                    case 0: seq_engine_reset(&eng, t, &acts); break;
+                    case 1: seq_engine_outputs_changed(&eng, t, &acts); break;
+                    case 2: seq_engine_start(&eng, t, &acts); break;
+                    }
+                }
+                if (fr(50) == 0) t += fr(400000);   // a stall
+                next_edit = t + fr(200000);
+            }
+            seq_actions_clear(&acts);
+            seq_engine_advance(&eng, t, &acts);
+            dropped += acts.dropped;
+            actions += acts.n;
+            if (acts.n > worst_batch) worst_batch = acts.n;
+            if (acts.dropped && !dropped_reported) {
+                dropped_reported = 1;
+                printf("  batch overflow: run %d t=%lld n=%d nev=%d\n", run, (long long)t,
+                       acts.n, eng.nev);
+            }
+            // within one batch, output is in time order and never early
+            last_out = INT64_MIN;
+            for (int i = 0; i < acts.n; i++) {
+                if (acts.a[i].due_us < last_out || acts.a[i].due_us > t + SEQ_LOOKAHEAD_US)
+                    backwards++;
+                last_out = acts.a[i].due_us;
+            }
+            if ((uint32_t)eng.nev > worst_q) worst_q = eng.nev;
+        }
+        CHECK(eng.stats.queue_overflows == 0, "run %d: queue overflow", run);
+    }
+    CHECK(dropped == 0, "%u actions dropped", dropped);
+    CHECK(backwards == 0, "%u actions out of time order", backwards);
+    printf("fuzz: 300 x 20s random patterns + live edits + stalls: %ld actions, "
+           "peak queue %u/%d, peak batch %d/%d, %u dropped\n", actions, worst_q, SEQ_MAX_EVENTS,
+           worst_batch, SEQ_MAX_ACTIONS, dropped);
+}
+
 int main(void) {
     test_no_drift();
     test_pitch_before_gate();
@@ -327,6 +416,7 @@ int main(void) {
     test_stop_flushes();
     test_swing_div2();
     test_glide();
+    test_fuzz();
     printf(failures ? "\n%d FAILURES\n" : "\nall engine tests passed\n", failures);
     return failures ? 1 : 0;
 }

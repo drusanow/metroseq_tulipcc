@@ -242,10 +242,14 @@ static void set_pitch(seq_engine_t *e, int t, int midi, bool slide, int32_t slid
     schedule(e, nt, EV_GLIDE, PRIO_GLIDE, t, t, tr->glide_tok, 0);
 }
 
-static void glide_event(seq_engine_t *e, const seq_event_t *ev, seq_actions_t *out) {
+static void glide_event(seq_engine_t *e, const seq_event_t *ev, int64_t now,
+                        seq_actions_t *out) {
     track_rt_t *tr = &e->tr[ev->track];
     if (tr->glide_tok != ev->token || e->pat->merge_cv) return;
-    int64_t el = ev->t - tr->glide_t0;
+    // If we're behind (after a stall), jump to where the glide is NOW
+    // instead of replaying every missed step as a burst of stale writes.
+    int64_t t = ev->t > now ? ev->t : now;
+    int64_t el = t - tr->glide_t0;
     if (el >= tr->glide_dur) {
         emit(out, ev->t, ACT_PITCH, ev->track, tr->glide_to);
         return;
@@ -253,7 +257,7 @@ static void glide_event(seq_engine_t *e, const seq_event_t *ev, seq_actions_t *o
     int32_t v = tr->glide_from +
                 (int32_t)(((int64_t)(tr->glide_to - tr->glide_from) * el) / tr->glide_dur);
     emit(out, ev->t, ACT_PITCH, ev->track, v);
-    int64_t nt = ev->t + SEQ_GLIDE_STEP_US;
+    int64_t nt = t + SEQ_GLIDE_STEP_US;
     int64_t end = tr->glide_t0 + tr->glide_dur;
     schedule(e, nt < end ? nt : end, EV_GLIDE, PRIO_GLIDE, ev->track, ev->track, ev->token, 0);
 }
@@ -547,6 +551,7 @@ void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out) {
     retempo(e);
     int64_t horizon = now + SEQ_LOOKAHEAD_US;
     for (;;) {
+        if (out->n > SEQ_MAX_ACTIONS - SEQ_ACTION_HEADROOM) break;   // rest next pass
         bool have_ev = e->nev > 0;
         bool have_pulse = e->playing;
         if (!have_ev && !have_pulse) break;
@@ -581,10 +586,14 @@ void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out) {
             seq_event_t ev = ev_pop(e);
             switch (ev.kind) {
             case EV_GATE_PULSE:
-                gate_pulse(e, ev.track, ev.t, ev.arg, out);
-                break;
             case EV_HOLD_ON:
-                gate_hold_on(e, ev.track, ev.t, out);
+                if (now - ev.t > SEQ_MAX_LATE_GATE_US) {
+                    e->stats.late_gates_dropped++;
+                } else if (ev.kind == EV_GATE_PULSE) {
+                    gate_pulse(e, ev.track, ev.t, ev.arg, out);
+                } else {
+                    gate_hold_on(e, ev.track, ev.t, out);
+                }
                 break;
             case EV_GATE_LOW:
                 gate_low_event(e, &ev, out);
@@ -594,7 +603,7 @@ void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out) {
                     emit(out, ev.t, ACT_AUDIO_OFF, ev.track, 0);
                 break;
             case EV_GLIDE:
-                glide_event(e, &ev, out);
+                glide_event(e, &ev, now, out);
                 break;
             }
         }
