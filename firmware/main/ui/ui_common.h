@@ -8,6 +8,8 @@
 #include "lvgl.h"
 
 // --- layout (1024 x 600), same numbers as the Python -----------------------
+#define LCD_W       1024
+#define LCD_H       600
 #define SCREEN_TOP  8
 #define HDR_H       52
 #define HDR_BTN_H   42
@@ -115,3 +117,9 @@ void set_page_poll(void);
 
 void save_popup_create(lv_obj_t *parent);
 void save_popup_show(void);
+
+// touch calibration (ui_touchcal.c)
+void ui_touchcal_boot_prompt(void);   // "calibrate or skip" at startup
+void ui_touchcal_start(void);         // straight to the targets (SET page)
+void ui_touchcal_poll(void);
+bool ui_touchcal_active(void);

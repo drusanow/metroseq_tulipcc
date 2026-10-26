@@ -199,3 +199,79 @@ These can only be confirmed on a Tulip:
   as soon as the previous gate falls (except for legato).
 * The preview synth is intentionally simple. It's for monitoring, not a voice.
 * External clock/reset in, MIDI clock and per-stage CV in are not in the sketch and are not added.
+
+---
+
+## 7. Follow-up: touch, MIDI clock, CV range
+
+### 7.1 Touch responsiveness
+Before this change, the path from finger to reaction was: GT911 scan (~10 ms) → poll in a
+bus gap → queue → the LVGL task sleeping out the rest of its frame (up to 10 ms) →
+LVGL's input timer (5 ms) → action on **release**. That is roughly 20–30 ms plus however
+long the finger stayed down. Now:
+
+* The touch driver **wakes the LVGL task** as soon as an event is queued, and the loop
+  feeds it to LVGL (`lv_indev_read`) before anything else.
+* Buttons act on **press**, not release, and show a white rim while held. This UI has no
+  scrolling, so nothing can mistake a press for the start of a scroll. Hold-to-repeat
+  (the BPM ± buttons) still works.
+* Sliders have a **24 px extended hit area** on each side of their 20 px track.
+
+So a press now reacts within one touch poll plus one render, about 10–20 ms. The sequencer
+is unaffected: touch reads still only happen in bus gaps.
+
+### 7.2 Touch calibration
+* **What's fixed in hardware.** The GT911 reports coordinates in its own configured
+  range (registers 0x8048/0x804A, now read and logged at boot). Tulip copes with a fixed
+  x−2, (y−12)·0.8 map, and that mismatch is the likely source of "almost but not quite"
+  touches near the edges.
+* **Method.** A 6-coefficient affine map (offset, scale, rotation and skew per axis) is
+  fitted by least squares to **5 targets**: 4 corners inset 64 px, plus the centre (the
+  TI SLYT277 approach). Five points over-determine the fit, so one sloppy tap is averaged
+  out. The residual error then tells us if the taps were inconsistent; a fit is rejected
+  if RMS > 10 px, any target > 25 px, or the map is implausible (mirrored, collapsed).
+  Each target averages all the samples of the press, skipping the first contact sample.
+* **Can't lock you out.** The prompt and the targets read **raw** coordinates through a
+  display hook and offer only half-screen choices, so they work even with a badly wrong
+  saved calibration. The result is applied live for testing. SAVE writes it to NVS; CANCEL,
+  or 20 s without a touch, restores the previous one.
+* **Startup.** Tap the left half to calibrate, the right half or wait 5 s to keep the saved
+  (or default) calibration. The countdown only starts once the touch controller is up.
+* Tests (`tests/test_midi_touch.c`) check exact recovery of Tulip's map, a skewed panel
+  with ±3 px tap noise (within ~2 px), and rejection of a 60 px-off tap and of degenerate
+  input.
+
+### 7.3 MIDI clock in
+* **Hardware.** Tulip's MIDI IN is UART1 RX on GPIO12, 31250 8N1, not inverted (from AMY's
+  `esp_init_midi`). A small task on core 1 asks for **one byte at a time with no
+  timeout**, so it wakes as each byte lands. AMY's own loop uses `uart_read_bytes(...,
+  1 ms)`, which waits for a full buffer or the timeout and can add up to 1 ms. Each byte
+  is timestamped on the sequencer's GPTimer clock. If bytes arrive together, they are
+  back-dated 320 µs apart (one byte time at 31250 baud).
+* **Hard sync, soft tempo.** Every 6th clock (one 1/16) fires a master pulse **at that
+  clock's own timestamp**, so the sequence is phase-locked to the master with no added
+  lag or drift. Gate lengths, swing, ratchets and glides use a tempo averaged over the
+  last 24 clocks. A jittery clock therefore doesn't make gate lengths jitter. A single
+  late clock is ignored, and three in a row are taken as a real tempo change.
+* **Transport.** START arms, and the next clock is the downbeat. STOP stops. CONTINUE
+  resumes mid-bar at the right phase. Song Position silently fast-forwards the engine so
+  the next pulse is the requested 1/16. In MIDI mode, PLAY arms or cancels (`ARMED` on the
+  button), and RST re-arms so the restart lands on the next clock. Clock loss (no clock
+  for 500 ms) clears the tempo display.
+* **Choice of design.** A PLL would smooth a jittery master, but it adds phase lag and lock
+  time. Most Eurorack sequencers hard-sync to the incoming clock, and this does too.
+* Tests cover a 120 BPM clock with ±0.3 ms jitter: every gate lands exactly on its 6th-clock
+  timestamp and the tempo reads 120.0. They also cover STOP/CONTINUE mid-bar, SPP 12, an
+  ignored hiccup, a 120→90 tempo change, dropout, and real-time bytes inside notes and
+  sysex.
+
+### 7.4 CV range 0–10 V, C0 = 0 V
+The DAC already mapped C0 (MIDI 12) to 0 V on its 0–10 V range. But the engine clamped
+notes to MIDI 0–120, so anything below C0 piled up on 0 V and the top stopped at C9 (9 V).
+Now:
+
+* Notes are **folded by octaves** into C0..C10, the DAC's full 0–10 V. They stay in key and
+  never pile up on 0 V or 10 V. The fuzz test asserts every emitted pitch is in range.
+* Base octave runs −2..+5. At −2 the lowest slider note is C0 = 0 V, and at +5 the highest
+  is C10 = 10 V.
+* The GP8413 range register is still forced to 0–10 V at boot (`METRO_CV_SET_RANGE_10V`).

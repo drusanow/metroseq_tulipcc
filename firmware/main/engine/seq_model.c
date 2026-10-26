@@ -60,7 +60,7 @@ void pattern_sanitise(pattern_t *p) {
     p->bpm = clampi(p->bpm, MIN_BPM, MAX_BPM);
     p->root = clampi(p->root, 0, 11);
     p->scale_idx = clampi(p->scale_idx, 0, NUM_SCALES - 1);
-    p->base_octave = clampi(p->base_octave, -3, 5);
+    p->base_octave = clampi(p->base_octave, MIN_BASE_OCTAVE, MAX_BASE_OCTAVE);
     p->merge_cv = p->merge_cv ? 1 : 0;
     for (int i = 0; i < NUM_STAGES; i++) {
         stage_t *s = &p->stages[i];

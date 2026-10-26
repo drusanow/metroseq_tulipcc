@@ -330,7 +330,11 @@ static void random_edit(pattern_t *p) {
     switch (fr(12)) {
     case 0: p->bpm = MIN_BPM + fr(MAX_BPM - MIN_BPM + 1); break;
     case 1: p->merge_cv = !p->merge_cv; break;
-    case 2: p->root = fr(12); p->scale_idx = fr(NUM_SCALES); break;
+    case 2:
+        p->root = fr(12);
+        p->scale_idx = fr(NUM_SCALES);
+        p->base_octave = MIN_BASE_OCTAVE + fr(MAX_BASE_OCTAVE - MIN_BASE_OCTAVE + 1);
+        break;
     default: {
         stage_t *s = &p->stages[fr(NUM_STAGES)];
         track_cfg_t *t = &p->tracks[fr(NUM_TRACKS)];
@@ -350,7 +354,7 @@ static void random_edit(pattern_t *p) {
 
 static void test_fuzz(void) {
     static pattern_t p;
-    uint32_t worst_q = 0, dropped = 0, backwards = 0;
+    uint32_t worst_q = 0, dropped = 0, backwards = 0, out_of_range = 0;
     int worst_batch = 0, dropped_reported = 0;
     long actions = 0;
     for (int run = 0; run < 300; run++) {
@@ -391,6 +395,10 @@ static void test_fuzz(void) {
             for (int i = 0; i < acts.n; i++) {
                 if (acts.a[i].due_us < last_out || acts.a[i].due_us > t + SEQ_LOOKAHEAD_US)
                     backwards++;
+                // every pitch must sit inside the DAC's 0-10 V span (C0..C10)
+                if (acts.a[i].type == ACT_PITCH &&
+                    (acts.a[i].value < CV_MIN_MIDI * 100 || acts.a[i].value > CV_MAX_MIDI * 100))
+                    out_of_range++;
                 last_out = acts.a[i].due_us;
             }
             if ((uint32_t)eng.nev > worst_q) worst_q = eng.nev;
@@ -399,8 +407,9 @@ static void test_fuzz(void) {
     }
     CHECK(dropped == 0, "%u actions dropped", dropped);
     CHECK(backwards == 0, "%u actions out of time order", backwards);
+    CHECK(out_of_range == 0, "%u pitches outside 0-10 V", out_of_range);
     printf("fuzz: 300 x 20s random patterns + live edits + stalls: %ld actions, "
-           "peak queue %u/%d, peak batch %d/%d, %u dropped\n", actions, worst_q, SEQ_MAX_EVENTS,
+           "peak queue %u/%d, peak batch %d/%d, %u dropped, all pitches in 0-10 V\n", actions, worst_q, SEQ_MAX_EVENTS,
            worst_batch, SEQ_MAX_ACTIONS, dropped);
 }
 

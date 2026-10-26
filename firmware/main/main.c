@@ -4,6 +4,7 @@
 // ESP32-S3 with no Tulip/MicroPython/AMY firmware. Task layout:
 //
 //   core 1  seq     prio 23  engine + timer + I2C bus (DACs, touch)  <- real time
+//   core 1  midi_in prio 22  MIDI IN bytes, timestamped -> seq
 //   core 0  audio   prio 6   preview synth -> I2S
 //   core 0  lvgl    prio 4   UI rendering + RGB panel flush
 //   core 0  store   prio 2   NVS commits of presets / projects
@@ -23,6 +24,7 @@
 static const char *TAG = "metro";
 
 pattern_t g_pat;
+settings_t g_settings;
 seq_status_t g_status;
 
 static portMUX_TYPE s_pat_mux = portMUX_INITIALIZER_UNLOCKED;

@@ -39,12 +39,21 @@ typedef struct {
     proj_t items[MAX_PROJECTS];
 } proj_bank_t;
 
+typedef struct {
+    uint16_t magic;
+    uint16_t version;
+    settings_t s;
+} settings_blob_t;
+#define SETTINGS_VERSION 1
+
 static pat_blob_t s_presets[NUM_PRESETS];
 static proj_bank_t s_proj;
 static SemaphoreHandle_t s_mx;
 static TaskHandle_t s_task;
 static volatile uint32_t s_dirty_presets;   // bitmask
 static volatile bool s_dirty_projects;
+static volatile bool s_dirty_settings;
+static settings_blob_t s_settings;
 
 static bool blob_ok(const pat_blob_t *b) {
     return b->magic == BLOB_MAGIC && b->version == PATTERN_VERSION &&
@@ -67,6 +76,9 @@ static void flush_now(void) {
     s_dirty_presets = 0;
     bool proj = s_dirty_projects;
     s_dirty_projects = false;
+    bool sets = s_dirty_settings;
+    s_dirty_settings = false;
+    settings_blob_t sb = s_settings;
     static pat_blob_t pb[NUM_PRESETS];
     static proj_bank_t bank;
     memcpy(pb, s_presets, sizeof pb);
@@ -82,6 +94,8 @@ static void flush_now(void) {
     }
     if (proj && nvs_set_blob(h, "projects", &bank, sizeof bank) != ESP_OK)
         ESP_LOGW(TAG, "project write failed");
+    if (sets && nvs_set_blob(h, "settings", &sb, sizeof sb) != ESP_OK)
+        ESP_LOGW(TAG, "settings write failed");
     nvs_commit(h);
     nvs_close(h);
 }
@@ -114,6 +128,13 @@ void storage_init(void) {
                 memset(&s_presets[i], 0, sizeof s_presets[i]);
             else
                 pattern_sanitise(&s_presets[i].p);
+        }
+        size_t slen = sizeof s_settings;
+        if (nvs_get_blob(h, "settings", &s_settings, &slen) == ESP_OK &&
+            slen == sizeof s_settings && s_settings.magic == BLOB_MAGIC &&
+            s_settings.version == SETTINGS_VERSION) {
+            g_settings = s_settings.s;
+            if (g_settings.clock_src > CLOCK_MIDI) g_settings.clock_src = CLOCK_INT;
         }
         size_t len = sizeof s_proj;
         if (nvs_get_blob(h, "projects", &s_proj, &len) != ESP_OK || len != sizeof s_proj ||
@@ -183,6 +204,16 @@ int storage_project_save(const char *name, const pattern_t *p) {
     return idx;
 }
 
+void storage_settings_save(void) {
+    xSemaphoreTake(s_mx, portMAX_DELAY);
+    s_settings.magic = BLOB_MAGIC;
+    s_settings.version = SETTINGS_VERSION;
+    s_settings.s = g_settings;
+    s_dirty_settings = true;
+    xSemaphoreGive(s_mx);
+    xTaskNotifyGive(s_task);
+}
+
 bool storage_write_pending(void) {
-    return s_dirty_presets != 0 || s_dirty_projects;
+    return s_dirty_presets != 0 || s_dirty_projects || s_dirty_settings;
 }

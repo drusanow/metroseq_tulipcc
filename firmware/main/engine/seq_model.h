@@ -39,6 +39,11 @@ extern "C" {
 #define PITCH_RANGE     36   // slider span in semitones (3 octaves)
 #define CV_BASE_MIDI    36   // note that slider 0 names (C2)
 #define CV_V0_MIDI      12   // MIDI note at 0V on the pitch CV (C0 = 0V)
+// The pitch CV spans the GP8413's full 0-10 V: C0 (0 V) .. C10 (10 V).
+#define CV_MIN_MIDI     CV_V0_MIDI
+#define CV_MAX_MIDI     (CV_V0_MIDI + 120)
+#define MIN_BASE_OCTAVE (-2)   // base C0: the lowest slider note sits on 0 V
+#define MAX_BASE_OCTAVE 5      // base C7: the highest slider note sits on 10 V
 
 // Gate types for a stage
 enum { GATE_MULT = 0, GATE_SING, GATE_HOLD, GATE_REST, GATE_COUNT };
@@ -112,7 +117,7 @@ typedef struct {
     uint16_t bpm;
     uint8_t  root;          // 0..11
     uint8_t  scale_idx;     // 0..NUM_SCALES-1
-    int8_t   base_octave;   // -3..5
+    int8_t   base_octave;   // MIN_BASE_OCTAVE..MAX_BASE_OCTAVE
     uint8_t  merge_cv;      // bool: TRK2 -> TRK1 shared CV out
     stage_t  stages[NUM_STAGES];
     track_cfg_t tracks[NUM_TRACKS];
@@ -156,6 +161,14 @@ int quantise(int semi, const scale_t *scale, int root);
 void note_name(int midi, char *buf, int len);
 
 // The MIDI note a stage pitch of 0 maps to, incl. the global base octave.
+// Keep a note inside the 0-10 V CV span by whole octaves, so an
+// out-of-range note stays in key instead of piling up on 0 V or 10 V.
+static inline int fold_to_cv_range(int midi) {
+    if (midi < CV_MIN_MIDI) midi += 12 * ((CV_MIN_MIDI - midi + 11) / 12);
+    if (midi > CV_MAX_MIDI) midi -= 12 * ((midi - CV_MAX_MIDI + 11) / 12);
+    return midi;
+}
+
 static inline int eff_base_midi(const pattern_t *p) {
     return CV_BASE_MIDI + 12 * p->base_octave;
 }

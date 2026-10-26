@@ -11,7 +11,11 @@
 
 #include "engine/seq_model.h"
 
+// Loads presets, projects and device settings (into g_settings).
 void storage_init(void);
+
+// Device settings (clock source, touch calibration).
+void storage_settings_save(void);
 
 // Presets (UI task only)
 bool storage_preset_used(int slot);

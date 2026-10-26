@@ -19,6 +19,25 @@ Tulip: **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**.
 
 *(Rendered from the firmware's own UI code by `tools/ui_preview`, through the panel's RGB332 conversion.)*
 
+## Beyond the sketch
+
+* **MIDI clock in** (SET → `CLOCK: MIDI`): follows 24 PPQN clock plus Start / Stop /
+  Continue / Song Position from the Tulip's MIDI IN. In this mode PLAY arms a start on
+  the next clock (the button shows `ARMED`) and the header shows the incoming tempo.
+* **Touch calibration**: at power-on, tap the left half of the screen to calibrate, or
+  the right half (or wait 5 s) to keep the saved calibration. You can also run it any time
+  from SET → `TOUCH CAL`. It uses five targets, and you test the result live before
+  SAVE / RETRY / CANCEL.
+* **Snappier touch**: buttons act the moment you press, show a white rim while held,
+  sliders can be grabbed 24 px either side of the track, and the UI wakes the instant
+  a touch arrives.
+* **Full 0–10 V pitch range**: C0 = 0 V up to C10 = 10 V. Notes outside that range are
+  folded back by octaves, so they stay in key instead of sticking at 0 V or 10 V.
+
+| Startup calibration prompt | Calibration result |
+|---|---|
+| ![prompt](docs/img/0_cal_prompt.png) | ![result](docs/img/8_cal_result.png) |
+
 ## Layout
 
 ```
@@ -63,9 +82,11 @@ To go back to Tulip, flash a Tulip release with
 
 ## CV wiring (same as the sketch)
 
-* **TRK 1:** Mabee at 0x59 (default). VOUT0 = gate (0/5 V), VOUT1 = pitch (1 V/oct, 0 V = C0).
+* **TRK 1:** Mabee at 0x59 (default). VOUT0 = gate (0/5 V), VOUT1 = pitch: 1 V/oct over the
+  full 0–10 V, with 0 V = C0 (MIDI 12) and 10 V = C10. Base octave −2 puts the lowest slider note on 0 V.
 * **TRK 2:** a second Mabee with its A0 link cut (0x58). It is optional.
 * **MERGE T2>T1** (SET page): both tracks share DAC 0x59, and TRK 1 has priority.
+* **MIDI IN:** the Tulip's MIDI IN socket. Set SET → `CLOCK: MIDI` to sync to an external clock.
 * If the Tulip browns out at power-on with a DAC attached, power the DAC from its own 5 V
   supply with a shared ground.
 
@@ -75,7 +96,7 @@ Calibrate 1 V/oct by measuring VOUT1 at two notes and editing `CAL[]` in
 ## Tests (no hardware needed)
 
 ```sh
-make -C tests test          # engine unit tests + fuzz (ASan/UBSan) + Python parity
+make -C tests test          # engine + MIDI clock + touch-cal tests, fuzz (ASan/UBSan), Python parity
 make -C tools/ui_preview    # needs Pillow; writes tools/ui_preview/build/*.png
 ```
 

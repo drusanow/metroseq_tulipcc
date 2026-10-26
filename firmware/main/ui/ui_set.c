@@ -11,7 +11,7 @@
 static struct {
     lv_obj_t *panel;
     lv_obj_t *root_lbl, *scale_lbl, *boct_lbl, *range_lbl;
-    ui_btn_t *merge_btn;
+    ui_btn_t *merge_btn, *clock_btn;
     lv_obj_t *cv_status, *audio_lbl;
     ui_btn_t *slot_btns[NUM_PRESETS];
     lv_obj_t *save_lbl, *info, *proj_lbl;
@@ -55,7 +55,9 @@ static void quant_step(intptr_t arg) {
     switch (arg >> 1) {
     case 0: g_pat.root = pmod(g_pat.root + d, 12); break;
     case 1: g_pat.scale_idx = pmod(g_pat.scale_idx + d, NUM_SCALES); break;
-    case 2: g_pat.base_octave = clampi(g_pat.base_octave + d, -3, 5); break;
+    case 2:
+        g_pat.base_octave = clampi(g_pat.base_octave + d, MIN_BASE_OCTAVE, MAX_BASE_OCTAVE);
+        break;
     }
     refresh_quant();   // light touch: no whole-page redraw while playing
     ui_refresh_notes();
@@ -72,6 +74,15 @@ static void toggle_merge(intptr_t a) {
     set_page_refresh();
     ui_header_info(g_pat.merge_cv ? "TRK2->TRK1 CV" : "TRK1/TRK2 split");
 }
+
+static void toggle_clock(intptr_t a) {
+    g_settings.clock_src = g_settings.clock_src == CLOCK_MIDI ? CLOCK_INT : CLOCK_MIDI;
+    seq_cmd(CMD_CLOCK_CHANGED);   // stops the transport and switches source
+    storage_settings_save();
+    set_page_refresh();
+}
+
+static void touch_cal(intptr_t a) { ui_touchcal_start(); }
 
 static void toggle_audio(intptr_t a) {
     preview_set_enabled(!preview_enabled());
@@ -220,6 +231,9 @@ void set_page_poll(void) {
 void set_page_refresh(void) {
     refresh_quant();
     ui_btn_set_color(S.merge_btn, g_pat.merge_cv ? C_PLAY : C_BTN_DK);
+    bool midi = g_settings.clock_src == CLOCK_MIDI;
+    ui_btn_set_text(S.clock_btn, midi ? "CLOCK: MIDI" : "CLOCK: INT");
+    ui_btn_set_color(S.clock_btn, midi ? C_PLAY : C_BTN_DK);
     lv_label_set_text(S.audio_lbl, preview_enabled() ? "ON" : "off");
     refresh_slots();
     refresh_projects();
@@ -259,6 +273,9 @@ void set_page_create(lv_obj_t *parent) {
     ui_btn(p, "CV ON/OFF", 30, 130, 42, cv_toggle, 0, C_BTN_DK, 196, NULL);
     ui_btn(p, "RESCAN DAC", 172, 150, 42, cv_rescan, 0, C_BTN_DK, 196, NULL);
     S.merge_btn = ui_btn(p, "MERGE T2>T1", 340, 180, 42, toggle_merge, 0, C_BTN_DK, 196, NULL);
+    // CLOCK: follow MIDI IN clock + start/stop/continue, or run internally
+    S.clock_btn = ui_btn(p, "CLOCK: INT", 560, 160, 42, toggle_clock, 0, C_BTN_DK, 196, NULL);
+    ui_btn(p, "TOUCH CAL", 740, 140, 42, touch_cal, 0, C_BTN_DK, 196, NULL);
     S.cv_status = ui_label(p, "", 30, 246);
     ui_label(p, "Audio preview", 560, 246);
     ui_btn(p, "TOGGLE", 680, 110, 42, toggle_audio, 0, C_BTN_DK, 240, NULL);

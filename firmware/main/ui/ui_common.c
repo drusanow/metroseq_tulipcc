@@ -79,13 +79,16 @@ ui_btn_t *ui_btn(lv_obj_t *parent, const char *text, int x, int w, int h, ui_cb_
     lv_obj_set_style_bg_opa(b->obj, LV_OPA_COVER, 0);
     lv_obj_remove_flag(b->obj, LV_OBJ_FLAG_SCROLLABLE);
     ui_depad(b->obj);
-    if (repeat_cb) {
-        // a hold must not also fire a click when released
-        lv_obj_add_event_cb(b->obj, btn_event, LV_EVENT_SHORT_CLICKED, b);
-        lv_obj_add_event_cb(b->obj, btn_event, LV_EVENT_LONG_PRESSED_REPEAT, b);
-    } else {
-        lv_obj_add_event_cb(b->obj, btn_event, LV_EVENT_CLICKED, b);
-    }
+    // Instant feedback: a white rim while the finger is down.
+    lv_obj_set_style_border_color(b->obj, lv_color_white(), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(b->obj, 3, LV_STATE_PRESSED);
+    lv_obj_set_style_border_opa(b->obj, LV_OPA_COVER, LV_STATE_PRESSED);
+    // Act on PRESS, not release: the touch UI reacts the moment the finger
+    // lands (one touch poll, ~5-10 ms) instead of after it lifts. There is
+    // no scrolling anywhere in this UI, so there is nothing to mistake a
+    // press for. Hold-to-repeat still works on top (LONG_PRESSED_REPEAT).
+    lv_obj_add_event_cb(b->obj, btn_event, LV_EVENT_PRESSED, b);
+    if (repeat_cb) lv_obj_add_event_cb(b->obj, btn_event, LV_EVENT_LONG_PRESSED_REPEAT, b);
     b->label = lv_label_create(b->obj);
     lv_label_set_text(b->label, text);
     lv_obj_center(b->label);
@@ -125,4 +128,7 @@ void ui_style_bar_slider(lv_obj_t *sl, uint8_t center) {
     lv_obj_set_style_border_opa(sl, LV_OPA_COVER, LV_PART_KNOB);
     lv_obj_set_style_pad_ver(sl, -4, LV_PART_KNOB);
     lv_obj_set_style_pad_hor(sl, 3, LV_PART_KNOB);
+    // The track is only 20 px wide; let a finger anywhere within 24 px of
+    // it grab the slider.
+    lv_obj_set_ext_click_area(sl, 24);
 }

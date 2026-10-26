@@ -27,6 +27,18 @@ extern "C" {
 
 extern pattern_t g_pat;
 
+// --- device settings (not part of a pattern; saved in NVS) -----------------
+
+enum { CLOCK_INT = 0, CLOCK_MIDI = 1 };
+
+typedef struct {
+    uint8_t clock_src;        // CLOCK_INT or CLOCK_MIDI (follow MIDI IN clock)
+    uint8_t touch_cal_valid;  // touch_cal holds a user calibration
+    float touch_cal[6];       // affine raw -> screen map (engine/touch_cal.h)
+} settings_t;
+
+extern settings_t g_settings;
+
 void pat_lock(void);
 void pat_unlock(void);
 
@@ -46,6 +58,11 @@ typedef struct {
     volatile bool cv_enabled;
     volatile bool dac_present[NUM_TRACKS];
     volatile bool cv_ready;          // soft start finished
+    volatile bool touch_ready;       // GT911 found and polling
+
+    // MIDI clock (when g_settings.clock_src == CLOCK_MIDI)
+    volatile bool ext_armed;         // waiting for the next clock to start
+    volatile int ext_bpm_x10;        // measured tempo, 0 = no clock
 
     // timing instrumentation: how late each output batch started vs the
     // time the engine scheduled it for
@@ -81,6 +98,7 @@ typedef enum {
     CMD_CV_TOGGLE,
     CMD_CV_RESCAN,
     CMD_STATS_RESET,
+    CMD_CLOCK_CHANGED,        // g_settings.clock_src changed
 } seq_cmd_t;
 
 // Non-blocking; returns false only if the command queue is full.

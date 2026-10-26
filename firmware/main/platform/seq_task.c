@@ -30,6 +30,7 @@
 #include "driver/gpio.h"
 #include "driver/gptimer.h"
 #include "driver/i2c_master.h"
+#include "engine/midi_clock.h"
 #include "engine/seq_engine.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -38,6 +39,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "gt911.h"
+#include "midi_in.h"
 #include "preview_audio.h"
 #include "sdkconfig.h"
 
@@ -56,6 +58,15 @@ static const char *TAG = "seq";
 static gptimer_handle_t s_timer;
 static TaskHandle_t s_task;
 static QueueHandle_t s_cmdq;
+static QueueHandle_t s_midiq;
+
+typedef struct {
+    int64_t t;
+    uint16_t arg;
+    uint8_t type;
+} midi_msg_t;
+
+static midi_clock_t s_mc;
 static i2c_master_bus_handle_t s_bus;
 
 static seq_engine_t s_eng;
@@ -80,6 +91,12 @@ static inline int64_t now_us(void) {
     uint64_t c = 0;
     gptimer_get_raw_count(s_timer, &c);
     return (int64_t)c;
+}
+
+int64_t seq_now_us(void) { return s_timer ? now_us() : 0; }
+
+static bool inputs_waiting(void) {
+    return uxQueueMessagesWaiting(s_cmdq) || uxQueueMessagesWaiting(s_midiq);
 }
 
 static void clock_init(void) {
@@ -110,10 +127,10 @@ static void wait_until(int64_t due) {
         gptimer_alarm_config_t a = {.alarm_count = (uint64_t)wake};
         gptimer_set_alarm_action(s_timer, &a);   // fires at once if already past
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (uxQueueMessagesWaiting(s_cmdq)) return;
+        if (inputs_waiting()) return;
     }
     while (now_us() < due) {
-        if (uxQueueMessagesWaiting(s_cmdq)) return;
+        if (inputs_waiting()) return;
     }
 }
 
@@ -211,20 +228,38 @@ static void handle_cmd(uint8_t cmd, int64_t now) {
     // raises the downbeat gate, never after.
     if (cmd == CMD_TOGGLE_PLAY && !s_eng.playing && s_ramp_i >= 0) ramp_end();
 
+    bool ext = s_eng.ext_clock;
     seq_actions_clear(&s_acts);
     pat_lock();
     switch (cmd) {
     case CMD_TOGGLE_PLAY:
-        if (s_eng.playing)
+        if (s_eng.playing) {
             seq_engine_stop(&s_eng, now, &s_acts);
-        else
+            midi_clock_disarm(&s_mc);
+        } else if (ext) {
+            // following MIDI clock: start on the next clock (or cancel)
+            if (s_mc.armed)
+                midi_clock_disarm(&s_mc);
+            else
+                midi_clock_arm(&s_mc);
+        } else {
             seq_engine_start(&s_eng, now, &s_acts);
+        }
         break;
     case CMD_RESET:
-        seq_engine_reset(&s_eng, now, &s_acts);
-        break;
     case CMD_RESTART_IF_PLAYING:
-        if (s_eng.playing) seq_engine_start(&s_eng, now, &s_acts);
+        if (ext && s_eng.playing) {
+            midi_clock_arm(&s_mc);   // restart in phase, on the next clock
+        } else if (cmd == CMD_RESET) {
+            seq_engine_reset(&s_eng, now, &s_acts);
+        } else if (s_eng.playing) {
+            seq_engine_start(&s_eng, now, &s_acts);
+        }
+        break;
+    case CMD_CLOCK_CHANGED:
+        if (s_eng.playing) seq_engine_stop(&s_eng, now, &s_acts);
+        midi_clock_init(&s_mc);
+        seq_engine_set_ext_clock(&s_eng, g_settings.clock_src == CLOCK_MIDI);
         break;
     case CMD_OUTPUTS_CHANGED:
         seq_engine_outputs_changed(&s_eng, now, &s_acts);
@@ -256,6 +291,9 @@ static void handle_cmd(uint8_t cmd, int64_t now) {
     case CMD_CV_RESCAN:
         cv_init_now();
         break;
+    case CMD_CLOCK_CHANGED:
+        status_info(g_settings.clock_src == CLOCK_MIDI ? "clock: MIDI IN" : "clock: internal");
+        break;
     case CMD_STATS_RESET:
         memset((void *)g_status.late_hist, 0, sizeof g_status.late_hist);
         g_status.late_max_us = 0;
@@ -266,6 +304,22 @@ static void handle_cmd(uint8_t cmd, int64_t now) {
         g_status.touch_forced = 0;
         break;
     }
+}
+
+void seq_midi_post(uint8_t type, uint16_t arg, int64_t t) {
+    midi_msg_t m = {.t = t, .arg = arg, .type = type};
+    if (!s_midiq || xQueueSend(s_midiq, &m, 0) != pdTRUE) return;
+    xTaskNotifyGive(s_task);
+}
+
+static void handle_midi(const midi_msg_t *m) {
+    if (!s_eng.ext_clock) return;   // internal clock: MIDI IN is ignored
+    midi_ev_t ev = {.type = m->type, .arg = m->arg};
+    seq_actions_clear(&s_acts);
+    pat_lock();
+    midi_clock_event(&s_mc, &s_eng, &ev, m->t, &s_acts);
+    pat_unlock();
+    execute(&s_acts);
 }
 
 bool seq_cmd(seq_cmd_t cmd) {
@@ -312,6 +366,8 @@ static void publish(void) {
     for (int l = 0; l < NUM_MOD_LANES; l++) g_status.lane_disp[l] = s_eng.ln[l].disp_stage;
     g_status.resyncs = s_eng.stats.resyncs;
     g_status.late_gates_dropped = s_eng.stats.late_gates_dropped;
+    g_status.ext_armed = s_eng.ext_clock && s_mc.armed;
+    g_status.ext_bpm_x10 = midi_clock_alive(&s_mc, now_us()) ? midi_clock_bpm_x10(&s_mc) : 0;
 }
 
 // --- the task ----------------------------------------------------------------
@@ -337,10 +393,17 @@ static void seq_task(void *arg) {
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &s_bus));
     cv_dac_attach_bus(s_bus, CONFIG_METRO_DAC_I2C_HZ);
 
+    if (g_settings.touch_cal_valid) gt911_set_cal(g_settings.touch_cal);
     s_touch_ok = gt911_init(s_bus, CONFIG_METRO_TOUCH_I2C_HZ);
+    g_status.touch_ready = s_touch_ok;
     s_touch_next = now_us();
 
+    midi_clock_init(&s_mc);
     seq_engine_init(&s_eng, &g_pat, esp_random());
+    seq_engine_set_ext_clock(&s_eng, g_settings.clock_src == CLOCK_MIDI);
+    // started once the loop is about to run, so no backlog of stale clocks
+    midi_in_start();
+
     g_status.cv_enabled = true;
     s_cv_init_at = now_us() + CV_INIT_DELAY_US;
     ESP_LOGI(TAG, "sequencer running on core %d, prio %d", xPortGetCoreID(), SEQ_PRIORITY);
@@ -351,6 +414,11 @@ static void seq_task(void *arg) {
         while (xQueueReceive(s_cmdq, &cmd, 0) == pdTRUE) handle_cmd(cmd, now_us());
 
         run_engine(now_us());
+
+        // MIDI clock: everything due before a clock has already been done
+        // above, so each clock lands in order at its own arrival time
+        midi_msg_t mm;
+        while (xQueueReceive(s_midiq, &mm, 0) == pdTRUE) handle_midi(&mm);
 
         now = now_us();
         if (now >= s_cv_init_at) {
@@ -373,5 +441,6 @@ static void seq_task(void *arg) {
 
 void seq_task_start(void) {
     s_cmdq = xQueueCreate(16, sizeof(uint8_t));
+    s_midiq = xQueueCreate(64, sizeof(midi_msg_t));
     xTaskCreatePinnedToCore(seq_task, "seq", SEQ_STACK, NULL, SEQ_PRIORITY, &s_task, SEQ_CORE);
 }

@@ -316,8 +316,15 @@ static void mod_tick(seq_engine_t *e, int l) {
 
 // --- per-track pulse handling (Python _stage_enter / _fire_pulse) ---------
 
+// Length of `mult` master 1/16s: from the tempo on the internal clock (exact
+// integer maths, as before), or from the measured MIDI clock rate.
+static int64_t p16_mul(const seq_engine_t *e, int mult) {
+    if (e->ext_clock && e->ext_p16_us > 0) return e->ext_p16_us * mult;
+    return (15000000LL * mult) / e->bpm;
+}
+
 static int64_t track_pulse_us(const seq_engine_t *e, int t) {
-    return (15000000LL * DIV_VALUES[e->pat->tracks[t].div_i]) / e->bpm;
+    return p16_mul(e, DIV_VALUES[e->pat->tracks[t].div_i]);
 }
 
 static void stage_enter(seq_engine_t *e, int t, int64_t now, seq_actions_t *out) {
@@ -354,7 +361,7 @@ static void stage_enter(seq_engine_t *e, int t, int64_t now, seq_actions_t *out)
     semi = quantise(semi, &SCALES[e->pat->scale_idx], e->pat->root);
     int midi = eff_base_midi(e->pat) + semi + eff_transpose(e, t) + 12 * eff_octave(e, t) +
                tr->accum_run;
-    midi = clampi(midi, 0, 120);
+    midi = fold_to_cv_range(midi);   // stay inside the 0-10 V span, in key
 
     int32_t slide_us = (int32_t)(track_pulse_us(e, t) * 3 / 5);
     if (tr->play_this)
@@ -480,7 +487,7 @@ void seq_engine_start(seq_engine_t *e, int64_t now, seq_actions_t *out) {
     e->bpm = e->pat->bpm;
     e->anchor_n = 0;
     e->anchor_us = now;
-    e->next_pulse_us = pulse_time(e, 1);
+    e->next_pulse_us = e->ext_clock ? INT64_MAX : pulse_time(e, 1);
     for (int l = 0; l < NUM_MOD_LANES; l++) {
         e->ln[l].cur_stage = 0;
         e->ln[l].pdir = 1;
@@ -532,7 +539,7 @@ void seq_engine_outputs_changed(seq_engine_t *e, int64_t now, seq_actions_t *out
 // Tempo changed: re-anchor at the last pulse so the grid continues from
 // where it is (no jump, no drift) at the new rate.
 static void retempo(seq_engine_t *e) {
-    if (e->pat->bpm == e->bpm) return;
+    if (e->pat->bpm == e->bpm || e->ext_clock) return;
     if (e->playing) {
         e->anchor_us = pulse_time(e, e->clk);
         e->anchor_n = e->clk;
@@ -541,8 +548,58 @@ static void retempo(seq_engine_t *e) {
     if (e->playing) e->next_pulse_us = pulse_time(e, e->clk + 1);
 }
 
+// --- external clock ---------------------------------------------------------
+
+void seq_engine_set_ext_clock(seq_engine_t *e, bool ext) {
+    e->ext_clock = ext;
+    e->ext_p16_us = 0;
+    e->bpm = e->pat->bpm;
+    e->next_pulse_us = INT64_MAX;   // the caller stops first; start() re-arms
+}
+
+void seq_engine_ext_tempo(seq_engine_t *e, int64_t p16_us) {
+    if (p16_us > 0) e->ext_p16_us = p16_us;
+}
+
+void seq_engine_ext_pulse(seq_engine_t *e, int64_t t, seq_actions_t *out) {
+    if (!e->playing || !e->ext_clock) return;
+    master_pulse(e, t, out);
+}
+
+void seq_engine_continue(seq_engine_t *e, int64_t now, seq_actions_t *out) {
+    (void)out;
+    if (e->playing) return;
+    e->playing = true;
+    e->bpm = e->pat->bpm;
+    e->anchor_n = e->clk;
+    e->anchor_us = now;
+    e->next_pulse_us = e->ext_clock ? INT64_MAX : pulse_time(e, e->clk + 1);
+}
+
+void seq_engine_locate(seq_engine_t *e, int64_t now, uint32_t pulses) {
+    static seq_actions_t scratch;   // outputs of the fast-forward are discarded
+    seq_actions_clear(&scratch);
+    seq_engine_start(e, now, &scratch);
+    if (pulses > 16384) pulses = 16384;   // MIDI SPP maximum
+    for (uint32_t i = 1; i < pulses; i++) {
+        seq_actions_clear(&scratch);
+        master_pulse(e, now, &scratch);
+        e->nev = 0;
+    }
+    e->nev = 0;
+    e->playing = false;
+    for (int t = 0; t < NUM_TRACKS; t++) {
+        e->tr[t].holding = false;
+        e->gate_tok[t]++;
+        e->audio_tok[t]++;
+        e->tr[t].glide_tok++;
+    }
+    e->shared_high = false;
+    e->shared_owner = -1;
+}
+
 int64_t seq_engine_next_due(const seq_engine_t *e) {
-    int64_t t = e->playing ? e->next_pulse_us : INT64_MAX;
+    int64_t t = (e->playing && !e->ext_clock) ? e->next_pulse_us : INT64_MAX;
     if (e->nev > 0 && e->ev[0].t < t) t = e->ev[0].t;
     return t;
 }
@@ -553,7 +610,7 @@ void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out) {
     for (;;) {
         if (out->n > SEQ_MAX_ACTIONS - SEQ_ACTION_HEADROOM) break;   // rest next pass
         bool have_ev = e->nev > 0;
-        bool have_pulse = e->playing;
+        bool have_pulse = e->playing && !e->ext_clock;
         if (!have_ev && !have_pulse) break;
 
         bool take_pulse;

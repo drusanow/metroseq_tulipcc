@@ -4,7 +4,7 @@ FW = ../../firmware/main
 LVGL = ../../firmware/components/lvgl
 CFLAGS = -O1 -g -w -std=gnu11 -DLV_CONF_INCLUDE_SIMPLE -Ibuild -Istub -I$(FW) -I$(LVGL)
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
-APP_SRC = preview.c $(wildcard $(FW)/ui/*.c) $(FW)/engine/seq_model.c
+APP_SRC = preview.c $(wildcard $(FW)/ui/*.c) $(FW)/engine/seq_model.c $(FW)/engine/touch_cal.c
 
 all: build/preview
 	cd build && rm -f *.ppm && ./preview

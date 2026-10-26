@@ -116,10 +116,21 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px) {
 
 // Touch: drain queued events one at a time so a tap that happened while
 // we were busy rendering is still seen as press + release.
+static touch_raw_hook_t s_hook;
+
+void display_set_touch_hook(touch_raw_hook_t hook) { s_hook = hook; }
+
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
     static touch_event_t last;
     touch_event_t ev;
-    if (touch_next_event(&ev)) last = ev;
+    if (touch_next_event(&ev)) {
+        if (s_hook && s_hook(&ev)) {
+            // the calibration screen consumed it: LVGL sees no touch
+            last.pressed = false;
+        } else {
+            last = ev;
+        }
+    }
     data->point.x = last.x;
     data->point.y = last.y;
     data->state = last.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
@@ -146,16 +157,21 @@ static void lvgl_task(void *arg) {
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
     lv_timer_set_period(lv_indev_get_read_timer(indev), 5);
+    touch_set_listener(xTaskGetCurrentTaskHandle());
 
     ui_create();
     ESP_LOGI(TAG, "LVGL running on core %d", xPortGetCoreID());
 
     for (;;) {
+        // A touch event wakes this task straight away (see gt911.c), and
+        // is fed to LVGL before anything else, so a press reacts within
+        // one touch poll instead of waiting out the rest of a frame.
+        if (touch_events_pending()) lv_indev_read(indev);
         uint32_t next = lv_timer_handler();
         ui_poll();
         if (next > FRAME_MS) next = FRAME_MS;
         if (next < 1) next = 1;
-        vTaskDelay(pdMS_TO_TICKS(next));
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(next));
     }
 }
 

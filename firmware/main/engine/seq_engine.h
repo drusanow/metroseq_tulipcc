@@ -145,6 +145,8 @@ typedef struct {
     const pattern_t *pat;      // shared, edited live by the UI
 
     bool     playing;
+    bool     ext_clock;        // master pulses come from MIDI clock, not the timer
+    int64_t  ext_p16_us;       // measured 1/16 length when on external clock
     uint32_t clk;              // master 1/16 counter since play
     uint16_t bpm;              // tempo the anchor was computed with
     int64_t  anchor_us;        // time of master pulse anchor_n
@@ -184,6 +186,24 @@ void seq_engine_reset(seq_engine_t *e, int64_t now, seq_actions_t *out);
 // Merge mode toggled (or CV routing changed): everything low, ownership
 // cleared, so no gate can be left stuck.
 void seq_engine_outputs_changed(seq_engine_t *e, int64_t now, seq_actions_t *out);
+
+// --- external (MIDI) clock -------------------------------------------------
+// In external mode the engine schedules no master pulses of its own; the
+// caller delivers each one with seq_engine_ext_pulse() at the moment the
+// 6th MIDI clock arrives. Gate lengths, swing, ratchets and glides are
+// timed from the measured 1/16 length passed to seq_engine_ext_tempo().
+
+void seq_engine_set_ext_clock(seq_engine_t *e, bool ext);   // call while stopped
+void seq_engine_ext_tempo(seq_engine_t *e, int64_t p16_us);
+void seq_engine_ext_pulse(seq_engine_t *e, int64_t t, seq_actions_t *out);
+
+// MIDI Continue: resume from where STOP left off (no rewind).
+void seq_engine_continue(seq_engine_t *e, int64_t now, seq_actions_t *out);
+
+// MIDI Song Position: silently run the sequence forward so that the next
+// pulse delivered is 1/16 number `pulses` (0 = the downbeat). Leaves the
+// engine stopped, ready for seq_engine_continue().
+void seq_engine_locate(seq_engine_t *e, int64_t now, uint32_t pulses);
 
 // Process everything due at or before `now` (+lookahead).
 void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out);

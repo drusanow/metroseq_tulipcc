@@ -12,6 +12,8 @@
 #include "lvgl.h"
 #include "platform/preview_audio.h"
 #include "platform/storage.h"
+#include "platform/touch.h"
+#include "engine/touch_cal.h"
 #include "ui/ui.h"
 #include "ui/ui_common.h"
 
@@ -21,7 +23,16 @@
 // --- stand-ins for the firmware's platform layer -------------------------------
 
 pattern_t g_pat;
+settings_t g_settings;
 seq_status_t g_status;
+void storage_settings_save(void) {}
+
+static float s_cal[6] = TOUCH_CAL_DEFAULT;
+void gt911_set_cal(const float m[6]) { for (int i = 0; i < 6; i++) s_cal[i] = m[i]; }
+void gt911_get_cal(float m[6]) { for (int i = 0; i < 6; i++) m[i] = s_cal[i]; }
+void gt911_raw_max(int *x, int *y) { *x = 1024; *y = 750; }
+static touch_raw_hook_t s_hook;
+void display_set_touch_hook(touch_raw_hook_t h) { s_hook = h; }
 void pat_lock(void) {}
 void pat_unlock(void) {}
 void pat_store(const pattern_t *src) { g_pat = *src; }
@@ -107,6 +118,27 @@ static void tap(int x, int y) {
     pump(60);
 }
 
+// A touch as the GT911 would report it on a panel with Tulip's default
+// mapping, offered to the calibration hook first like display.c does.
+static void raw_touch(int x, int y, int pressed) {
+    touch_event_t ev = {.x = x, .y = y, .rx = x + 2, .ry = (int16_t)((y + 9.6f) / 0.8f),
+                        .pressed = pressed};
+    if (s_hook && s_hook(&ev)) {
+        touch_down = 0;
+    } else {
+        touch_x = x;
+        touch_y = y;
+        touch_down = pressed;
+    }
+    pump(30);
+}
+
+static void raw_tap(int x, int y) {
+    raw_touch(x, y, 1);
+    raw_touch(x + 1, y, 1);
+    raw_touch(x + 1, y, 0);
+}
+
 static void save(const char *name) {
     lv_obj_invalidate(lv_screen_active());
     pump(40);
@@ -149,6 +181,21 @@ int main(void) {
     ui_create();
     pump(50);
 
+    // --- startup touch-calibration prompt, then a full calibration ---
+    g_status.touch_ready = true;
+    pump(1200);
+    save("0_cal_prompt");
+    raw_tap(200, 300);                       // left half: calibrate
+    save("7_cal_target");
+    static const int tx[5] = {64, 960, 960, 64, 512}, ty[5] = {64, 64, 536, 536, 300};
+    static const int jx[5] = {2, -3, 1, 3, -1}, jy[5] = {-2, 1, 3, -1, 2};   // sloppy taps
+    for (int i = 0; i < 5; i++) raw_tap(tx[i] + jx[i], ty[i] + jy[i]);
+    raw_touch(700, 250, 1);                  // test-draw with the new calibration
+    raw_touch(704, 252, 1);
+    save("8_cal_result");
+    raw_touch(704, 252, 0);
+    tap(110 + 120, 600 - 110 + 35);          // SAVE
+
     // pretend the sequence is running so the playhead LEDs show
     g_status.playing = true;
     g_status.disp_stage[0] = 2;
@@ -173,5 +220,16 @@ int main(void) {
     save("5_set");
     tap(110 + 60, PAGE_Y + 428 + 20);   // SAVE AS...
     save("6_save_project");
+
+    tap(232 + 434 + 55, 45 + 102 + 20);   // Cancel the save popup
+
+    // following MIDI clock, armed and waiting for the downbeat
+    show_page(0);
+    g_settings.clock_src = CLOCK_MIDI;
+    g_status.playing = false;
+    g_status.ext_armed = true;
+    g_status.ext_bpm_x10 = 1243;
+    pump(100);
+    save("9_midi_armed");
     return 0;
 }

@@ -13,12 +13,14 @@ static struct {
     lv_obj_t *bpm_label;
     lv_obj_t *info;
     int page;
-    bool shown_playing;
     int8_t last_disp[NUM_TRACKS];
     int8_t last_mod_disp;
     uint32_t info_seq;
     int cv_on_shown;
-} H = {.page = -1, .last_disp = {-1, -1}, .last_mod_disp = -1, .cv_on_shown = -1};
+    int play_shown;      // 0 stopped, 1 playing, 2 armed (waiting for MIDI clock)
+    int tempo_shown;     // last value drawn in the BPM label
+} H = {.page = -1, .last_disp = {-1, -1}, .last_mod_disp = -1, .cv_on_shown = -1,
+       .play_shown = -1, .tempo_shown = -1};
 
 // --- transport / tempo -------------------------------------------------------
 
@@ -29,10 +31,24 @@ static void reset_sequence(intptr_t a) {
     ui_header_info("reset");
 }
 
+// BPM label: the pattern tempo on the internal clock, or the measured
+// tempo when following MIDI clock (encoded negative so it never collides).
+static void draw_tempo(void) {
+    int v = g_settings.clock_src == CLOCK_MIDI ? -1 - g_status.ext_bpm_x10 : g_pat.bpm;
+    if (v == H.tempo_shown) return;
+    H.tempo_shown = v;
+    if (v >= 0)
+        lv_label_set_text_fmt(H.bpm_label, "%d BPM", v);
+    else if (g_status.ext_bpm_x10)
+        lv_label_set_text_fmt(H.bpm_label, "MIDI %d", (g_status.ext_bpm_x10 + 5) / 10);
+    else
+        lv_label_set_text(H.bpm_label, "MIDI --");
+}
+
 void ui_set_bpm(int bpm) {
     g_pat.bpm = clampi(bpm, MIN_BPM, MAX_BPM);
     seq_cmd(CMD_TEMPO);
-    lv_label_set_text_fmt(H.bpm_label, "%d BPM", g_pat.bpm);
+    draw_tempo();
 }
 
 static void bpm_up(intptr_t a) { ui_set_bpm(g_pat.bpm + BPM_STEP); }
@@ -104,7 +120,7 @@ static void update_playheads(bool playing) {
 }
 
 void ui_refresh_all(void) {
-    lv_label_set_text_fmt(H.bpm_label, "%d BPM", g_pat.bpm);
+    draw_tempo();
     seq_page_refresh();
     trk_page_refresh();
     mod_page_refresh();
@@ -115,12 +131,17 @@ void ui_refresh_notes(void) { seq_page_refresh_notes(); }
 
 void ui_poll(void) {
     bool playing = g_status.playing;
-    if (playing != H.shown_playing) {
-        H.shown_playing = playing;
-        ui_btn_set_text(H.play_btn, playing ? "STOP" : "PLAY");
-        ui_btn_set_color(H.play_btn, playing ? C_STOP : C_PLAY);
+    int ps = playing ? 1 : (g_status.ext_armed ? 2 : 0);
+    if (ps != H.play_shown) {
+        H.play_shown = ps;
+        static const char *const txt[3] = {"PLAY", "STOP", "ARMED"};
+        static const uint8_t col[3] = {C_PLAY, C_STOP, C_SEL};
+        ui_btn_set_text(H.play_btn, txt[ps]);
+        ui_btn_set_color(H.play_btn, col[ps]);
     }
     update_playheads(playing);
+    draw_tempo();
+    ui_touchcal_poll();
 
     char msg[40];
     uint32_t seq;
@@ -149,6 +170,7 @@ void ui_create(void) {
     set_page_create(scr);
     detail_popup_create(scr);
     save_popup_create(scr);
-    lv_label_set_text_fmt(H.bpm_label, "%d BPM", g_pat.bpm);
+    draw_tempo();
     show_page(0);
+    ui_touchcal_boot_prompt();
 }
