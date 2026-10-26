@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/tulip-full.bin}"
 export IDF_COMPONENT_MANAGER=0
 
-for app in studio metroseq gintonix sloe; do
+for app in studio metroseq gintonix sloe wavetron; do
     (cd "$ROOT/apps/$app" && idf.py build)
 done
 (cd "$ROOT/launcher" && idf.py build)
@@ -31,3 +31,7 @@ python -m esptool --chip esp32s3 merge_bin -o "$OUT" @flash_args \
     0x950000 "$ROOT/apps/gintonix/build/gintonix.bin" \
     0xC50000 "$ROOT/apps/sloe/build/sloe.bin"
 echo "wrote $OUT"
+# the four slots are full: wavetron goes on with the launcher (Wi-Fi page or
+# tools/tulip.py push) - it is also inside studio
+cp "$ROOT/apps/wavetron/build/wavetron.bin" "$(dirname "$OUT")/wavetron.bin"
+echo "wrote $(dirname "$OUT")/wavetron.bin (push it with the launcher)"

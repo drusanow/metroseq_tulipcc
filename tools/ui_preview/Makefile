@@ -5,6 +5,7 @@ HAL  = ../../components/tulip_hal
 MS   = ../../modules/mod_metroseq
 GXM  = ../../modules/mod_gintonix
 SLM  = ../../modules/mod_sloe
+WTM  = ../../modules/mod_wavetron
 ST   = ../../components/tulip_studio
 CJ   = ../../tests/vendor/cjson
 LA   = ../../launcher/main
@@ -15,8 +16,9 @@ HAL_UI = $(HAL)/src/touch_cal.c $(HAL)/src/touchcal_ui.c harness.c
 ST_SRC = studio_preview.c studio_stubs.c $(ST)/src/shell.c $(ST)/src/widgets.c $(ST)/src/studio.c \
          $(ST)/src/tclock.c $(wildcard $(MS)/ui/*.c) $(MS)/engine/seq_model.c \
          $(wildcard $(GXM)/core/*.c) $(GXM)/gx_mod.c $(wildcard $(GXM)/ui/*.c) \
-         $(SLM)/sloe_dsp.c $(SLM)/sloe_mod.c $(CJ)/cJSON.c $(HAL_UI)
-ST_INC = -I$(MS) -I$(MS)/platform -I$(GXM) -I$(GXM)/core -I$(GXM)/ui -I$(SLM) -I$(ST)/include \
+         $(SLM)/sloe_dsp.c $(SLM)/sloe_mod.c $(CJ)/cJSON.c $(HAL_UI) \
+         $(wildcard $(WTM)/core/*.c) $(WTM)/wt_mod.c $(wildcard $(WTM)/ui/*.c)
+ST_INC = -I$(MS) -I$(MS)/platform -I$(GXM) -I$(GXM)/core -I$(GXM)/ui -I$(SLM) -I$(WTM) -I$(WTM)/core -I$(WTM)/ui -I$(ST)/include \
          -I$(ST)/src -I$(CJ) -DTULIP_FS_ROOT=\"files\"
 LA_SRC = launcher_preview.c $(wildcard $(LA)/ui/*.c) $(wildcard $(LA)/core/*.c) $(HAL_UI)
 

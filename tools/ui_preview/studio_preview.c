@@ -1,7 +1,9 @@
 // studio_preview.c - render the Studio's real UI code on the host: the
 // Studio home page, metroseq, GinTonix and Sloe, through the panel's
 // RGB332 conversion.   make -C tools/ui_preview -> build/*.png
+#include <math.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <string.h>
 
 #include "app.h"
@@ -10,6 +12,7 @@
 #include "lvgl.h"
 #include "mod_gintonix.h"
 #include "mod_sloe.h"
+#include "mod_wavetron.h"
 #include "platform/preview_audio.h"
 #include "platform/storage.h"
 #include "studio_priv.h"
@@ -98,8 +101,8 @@ int main(void) {
 
     hx_init();
     hx_poll = shell_ui_poll;
-    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe};
-    studio_run(mods, 3);
+    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe, &mod_wavetron};
+    studio_run(mods, 4);
     g_cfg.shown = -1;   // start on the home page
     g_cfg.bpm_x100 = 12400;
     studio_route_set(0, 0, 2);            // TRK 1 -> SLOE
@@ -191,6 +194,63 @@ int main(void) {
     studio_next_app();
     hx_pump(100);
     hx_save("sloe_1");
+
+    // Wavetron: a chord playing, so the displays move. A WAV in its folder
+    // (24-bit stereo, 32 cycles) for the browser.
+    {
+        mkdir("files/wavetron", 0777);
+        mkdir("files/wavetron/wavetables", 0777);
+        FILE *f = fopen("files/wavetron/wavetables/Demo Growl.wav", "wb");
+        int n = 32 * 256;
+        uint32_t data = (uint32_t)n * 6, u;
+        fwrite("RIFF", 1, 4, f);
+        u = 36 + data;
+        fwrite(&u, 4, 1, f);
+        fwrite("WAVEfmt ", 1, 8, f);
+        uint32_t fmt[4] = {16, 1 | 2 << 16, 44100, 44100 * 6};
+        uint16_t fmt2[2] = {6, 24};
+        fwrite(fmt, 4, 4, f);
+        fwrite(fmt2, 2, 2, f);
+        fwrite("data", 1, 4, f);
+        fwrite(&data, 4, 1, f);
+        for (int i = 0; i < n; i++) {
+            float c = (float)(i / 256) / 31, ph = (float)(i % 256) / 256;
+            int32_t s = (int32_t)(sinf(6.2831853f * ph + c * 3 * sinf(12.566f * ph)) * 0.9f * 8388607);
+            uint8_t b[6] = {s & 255, s >> 8 & 255, s >> 16 & 255, s & 255, s >> 8 & 255, s >> 16 & 255};
+            fwrite(b, 1, 6, f);
+        }
+        fclose(f);
+    }
+    studio_next_app();
+    hx_pump(100);
+    {
+        static const int notes[3] = {48, 55, 60};
+        for (int i = 0; i < 3; i++) {
+            tnote_t n = {.type = TN_ON, .src = 0x80, .key = (uint8_t)notes[i], .vel = 100,
+                         .cents = notes[i] * 100};
+            mod_wavetron.note(&n);
+        }
+        static float l[STUDIO_BLOCK], r[STUDIO_BLOCK];
+        studio_block_t b = {.n = STUDIO_BLOCK};
+        for (int i = 0; i < 300; i++) mod_wavetron.render(l, r, &b);
+    }
+    hx_pump(200);
+    hx_save("wavetron_1_osc");
+    hx_tap(8 + 144 + 98, 60 + 24);   // OSC A's table name
+    hx_pump(100);
+    hx_save("wavetron_8_tables");
+    hx_tap(16 + 180, 60 + 340 + 27);   // LOAD A WAV FROM /files ...
+    hx_pump(100);
+    hx_save("wavetron_9_files");
+    hx_tap(1024 - 80, 60 + 26);        // CANCEL
+    static const char *const pages[] = {"wavetron_2_filter", "wavetron_3_mod", "wavetron_4_matrix",
+                                        "wavetron_5_voice", "wavetron_6_fx", "wavetron_7_patch"};
+    for (int k = 1; k < 7; k++) {
+        hx_tap(173 + 70 * k, 28);
+        hx_pump(150);
+        hx_save(pages[k - 1]);
+    }
+    hx_tap(173, 28);
     // back home with a closed app
     studio_show_home();
     hx_pump(100);

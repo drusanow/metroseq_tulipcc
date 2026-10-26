@@ -1,6 +1,6 @@
-// main.c - Tulip Studio: metroseq (sequencer, CV), GinTonix (drums) and
-// Sloe (synth) all running at once on one master clock. Switch between
-// them with the blue square; route metroseq's tracks to Sloe (or MIDI OUT)
+// main.c - Tulip Studio: metroseq (sequencer, CV), GinTonix (drums), Sloe
+// and Wavetron (synths) all running at once on one master clock. Switch between
+// them with the blue square; route metroseq's tracks to a synth (or MIDI OUT)
 // on the Studio home page (red square).
 //
 // To build your own combination, list the modules you want here (and in
@@ -9,8 +9,9 @@
 #include "mod_gintonix.h"
 #include "mod_metroseq.h"
 #include "mod_sloe.h"
+#include "mod_wavetron.h"
 
 void app_main(void) {
-    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe};
+    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe, &mod_wavetron};
     studio_run(mods, sizeof mods / sizeof mods[0]);
 }

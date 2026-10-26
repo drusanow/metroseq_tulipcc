@@ -1,7 +1,8 @@
 # Tulip Studio: several apps at once, on one clock
 
 **Studio** runs several apps on the Tulip at the same time, all playing to **one master
-clock**: metroseq (CV sequencer), GinTonix (drum machine) and Sloe (synth). You switch
+clock**: metroseq (CV sequencer), GinTonix (drum machine), Sloe and Wavetron
+(synths). You switch
 between their screens with the **blue square** in the top-right corner, as on the
 original Tulip. The apps you aren't looking at keep playing.
 
@@ -9,7 +10,7 @@ original Tulip. The apps you aren't looking at keep playing.
   MIDI clock, Start / Stop / Continue, Song Position and MMC drive every app at once.
 * **Each app has a role tag**, which tells the runtime what to give it (see the table
   below).
-* **Internal routing.** A metroseq track can play Sloe on the Tulip, go out of MIDI OUT,
+* **Internal routing.** A metroseq track can play Sloe or Wavetron on the Tulip, go out of MIDI OUT,
   or keep its own preview sound. metroseq's SLIDE becomes a glide on the synth.
 
 ![Studio home](img/studio_1_home.png)
@@ -76,7 +77,7 @@ comes back the next time you open Studio.
 |---|---|---|---|
 | **SEQUENCER** | the master clock's pulses (exact time of every 1/16) and transport | CV out (`CV`); note tracks to route to a synth or MIDI OUT | metroseq |
 | **DRUMS** | the clock's timeline and transport; MIDI notes and CCs on its channel | audio | GinTonix |
-| **SYNTH** | routed notes from sequencer tracks; MIDI notes on its channel | audio | Sloe |
+| **SYNTH** | routed notes from sequencer tracks; MIDI notes on its channel | audio | Sloe, Wavetron |
 
 Two flags sit alongside the role. `AUDIO` means the app renders into the mix. `CV` means
 the app owns the Mabee DACs, and only one app may.

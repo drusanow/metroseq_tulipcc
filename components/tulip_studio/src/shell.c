@@ -151,8 +151,12 @@ lv_obj_t *studio_chrome(lv_obj_t *parent) {
 
 // --- the Studio home page ------------------------------------------------------------------
 
-#define TILE_W 326
-#define TILE_H 150
+// Up to 4 app tiles in a row; each carries the app's mixer strip and what
+// it takes from MIDI IN. With more than 4 apps, two rows of shorter tiles.
+#define TILE_COLS 4
+#define TILE_W 244
+#define TILE_GAP 8
+#define TILES_Y 86
 
 static struct {
     lv_obj_t *play, *bpm, *clk_int, *clk_midi, *clk_out, *mmc, *status;
@@ -178,7 +182,7 @@ static void h_play(void *ud) { studio_toggle_play(); }
 
 // --- mixer ---------------------------------------------------------------------------------
 
-#define METER_W 280
+static int s_meter_w;
 
 static float mix_get(void *ud) { return studio_mix_level((int)(intptr_t)ud) / 100.0f; }
 static void mix_set(void *ud, float v) { studio_mix_set_level((int)(intptr_t)ud, (int)(v * 100 + 0.5f)); }
@@ -201,22 +205,16 @@ static void h_mute(void *ud) {
     sw_btn_set(H.mute[m], studio_mix_muted(m));
 }
 
-static void mixer_create(lv_obj_t *s, int y) {
-    sw_label(s, "MIXER", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
-    sw_label(s, "each app's level into the master VOLUME; M mutes", SW_F_SMALL, SW_DIM, 110, y + 2,
-             600, false);
-    int j = 0;
-    for (int i = 0; i < g_nmods; i++) {
-        if (!(g_mods[i]->flags & TMOD_F_AUDIO)) continue;
-        int x = 14 + j++ * 336, yy = y + 24;
-        H.mute[i] = sw_btn(s, "M", x, yy + 17, 38, 34, SW_RED, h_mute, (void *)(intptr_t)i, NULL);
-        sw_btn_set(H.mute[i], studio_mix_muted(i));
-        H.fader[i] = sw_slider(s, g_mods[i]->title, x + 46, yy, METER_W, 44, SW_GREEN, &MIX_OPS,
-                               (void *)(intptr_t)i);
-        sw_box(s, x + 46, yy + 47, METER_W, 4, 0x242424, 0);
-        H.meter[i] = sw_box(s, x + 46, yy + 47, 1, 4, SW_GREEN, 0);
-        H.meter_px[i] = -1;
-    }
+// an app's mixer strip, inside its tile: M, the level, a peak meter
+static void mixer_strip(lv_obj_t *t, int i, int y) {
+    int w = TILE_W - 2 * 10 - 44;
+    s_meter_w = w;
+    H.mute[i] = sw_btn(t, "M", 10, y + 17, 36, 30, SW_RED, h_mute, (void *)(intptr_t)i, NULL);
+    sw_btn_set(H.mute[i], studio_mix_muted(i));
+    H.fader[i] = sw_slider(t, "LEVEL", 54, y, w, 44, SW_GREEN, &MIX_OPS, (void *)(intptr_t)i);
+    sw_box(t, 54, y + 47, w, 4, 0x242424, 0);
+    H.meter[i] = sw_box(t, 54, y + 47, 1, 4, SW_GREEN, 0);
+    H.meter_px[i] = -1;
 }
 
 // peak meters, ~15 Hz: a quick rise, a slow fall
@@ -230,7 +228,7 @@ static void mixer_poll(void) {
         float db = hold[i] > 1e-5f ? 20.0f * log10f(hold[i]) : -96.0f;
         float f = (db + 48.0f) / 48.0f;
         f = f < 0 ? 0 : (f > 1 ? 1 : f);
-        int px = (int)(f * METER_W);
+        int px = (int)(f * s_meter_w);
         if (px < 1) px = 1;
         if (px == H.meter_px[i]) continue;
         H.meter_px[i] = px;
@@ -331,34 +329,49 @@ static void home_create(void) {
     studio_chrome(s);
     sw_line(s, 0, STUDIO_HDR_LINE_Y, 1024, 1);
 
-    // apps
-    sw_label(s, "APPS", SW_F_LABEL, SW_ORANGE, 14, 68, 0, false);
+    // apps: a tile each - what it is, what it takes from MIDI IN, open /
+    // close, and its mixer strip
+    bool compact = g_nmods > TILE_COLS;
+    int tile_h = compact ? 158 : 250;
+    sw_label(s, "APPS", SW_F_LABEL, SW_ORANGE, 14, 64, 0, false);
+    sw_label(s, "LEVEL into the master VOLUME, M mutes. MIDI IN: notes + CCs by channel; clock + "
+                "transport to every clocked app when the clock is MIDI",
+             SW_F_SMALL, SW_DIM, 74, 66, 940, false);
     for (int i = 0; i < g_nmods; i++) {
         const tmod_t *m = g_mods[i];
-        int x = 14 + (i % 3) * (TILE_W + 8), y = 92 + (i / 3) * (TILE_H + 8);
-        lv_obj_t *t = H.tile[i] = sw_box(s, x, y, TILE_W, TILE_H, SW_BG, 4);
+        int x = 12 + (i % TILE_COLS) * (TILE_W + TILE_GAP), y = TILES_Y + (i / TILE_COLS) * (tile_h + 8);
+        lv_obj_t *t = H.tile[i] = sw_box(s, x, y, TILE_W, tile_h, SW_BG, 4);
         lv_obj_set_style_border_width(t, 1, 0);
         lv_obj_set_style_border_color(t, sw_c(SW_LINE), 0);
-        sw_label(t, m->title, SW_F_MID, SW_TEXT, 12, 10, 0, false);
+        sw_label(t, m->title, SW_F_MID, SW_TEXT, 10, 8, 0, false);
         char tag[48];
         snprintf(tag, sizeof tag, "%s%s%s", studio_role_name(m->role),
                  (m->flags & TMOD_F_CV) ? "  CV" : "", (m->flags & TMOD_F_AUDIO) ? "  AUDIO" : "");
         uint32_t tc = m->role == TMOD_SEQUENCER ? SW_CYAN : m->role == TMOD_DRUMS ? SW_ORANGE
                                                                                  : SW_GREEN;
-        sw_label(t, tag, SW_F_SMALL, tc, 12, 40, 0, false);
-        lv_obj_t *bl = sw_label(t, m->blurb ? m->blurb : "", SW_F_SMALL, SW_DIM, 12, 60, TILE_W - 24,
-                                false);
-        lv_label_set_long_mode(bl, LV_LABEL_LONG_WRAP);
-        H.state[i] = sw_label(t, "", SW_F_SMALL, SW_DIM, TILE_W - 90, 14, 78, false);
+        sw_label(t, tag, SW_F_SMALL, tc, 10, 36, 0, false);
+        H.state[i] = sw_label(t, "", SW_F_SMALL, SW_DIM, TILE_W - 90, 12, 78, false);
         lv_obj_set_style_text_align(H.state[i], LV_TEXT_ALIGN_RIGHT, 0);
-        H.open_b[i] = sw_btn(t, "OPEN", 12, TILE_H - 46, 150, 36, SW_ORANGE, h_open,
-                             (void *)(intptr_t)i, NULL);
-        H.close_b[i] = sw_btn(t, "CLOSE", TILE_W - 112, TILE_H - 46, 100, 36, SW_RED, h_close,
+        int yb = 56;
+        if (!compact) {
+            lv_obj_t *bl = sw_label(t, m->blurb ? m->blurb : "", SW_F_SMALL, SW_DIM, 10, 56,
+                                    TILE_W - 20, false);
+            lv_label_set_long_mode(bl, LV_LABEL_LONG_WRAP);
+            lv_obj_set_height(bl, 30);
+            sw_label(t, "MIDI IN", SW_F_SMALL, SW_ORANGE, 10, 92, 0, false);
+            H.midi_rows[i] = sw_label(t, "", SW_F_SMALL, SW_TEXT, 10, 108, TILE_W - 20, false);
+            lv_label_set_long_mode(H.midi_rows[i], LV_LABEL_LONG_WRAP);
+            lv_obj_set_height(H.midi_rows[i], 46);
+            yb = 156;
+        }
+        H.open_b[i] = sw_btn(t, "OPEN", 10, yb, 120, 36, SW_ORANGE, h_open, (void *)(intptr_t)i, NULL);
+        H.close_b[i] = sw_btn(t, "CLOSE", TILE_W - 100, yb, 90, 36, SW_RED, h_close,
                               (void *)(intptr_t)i, NULL);
+        if (m->flags & TMOD_F_AUDIO) mixer_strip(t, i, yb + 40);
     }
 
     // routing
-    int y = 92 + ((g_nmods + 2) / 3) * (TILE_H + 8) + 6;
+    int y = TILES_Y + ((g_nmods + TILE_COLS - 1) / TILE_COLS) * (tile_h + 8) + 6;
     sw_label(s, "ROUTING", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
     sw_label(s, "a sequencer track plays its own sound, a synth on the Tulip, or MIDI OUT",
              SW_F_SMALL, SW_DIM, 110, y + 2, 0, false);
@@ -385,19 +398,6 @@ static void home_create(void) {
                                   (void *)(intptr_t)((r << 1) | 1), NULL);
         }
     }
-
-    // who listens to MIDI IN
-    y += ((H.nrows + 1) / 2) * 46 + 10;
-    sw_label(s, "MIDI IN", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
-    sw_label(s, "clock + Start / Stop / Continue / Song Position / MMC go to every clocked app "
-                "when the clock is MIDI; notes and CCs by channel:",
-             SW_F_SMALL, SW_DIM, 110, y + 2, 900, false);
-    for (int i = 0; i < g_nmods; i++) {
-        int yy = y + 26 + i * 22;
-        sw_label(s, g_mods[i]->title, SW_F_SMALL, SW_TEXT, 30, yy, 0, false);
-        H.midi_rows[i] = sw_label(s, "", SW_F_SMALL, SW_DIM, 150, yy, 860, false);
-    }
-    mixer_create(s, y + 26 + g_nmods * 22 + 8);
 
     // bottom line: volume, load, MIDI monitor, touch calibration
     sw_line(s, 0, 540, 1024, 1);
@@ -458,7 +458,7 @@ static void home_refresh(void) {
             g_mods[i]->midi_desc(d, sizeof d);
         else if (g_mods[i]->flags & TMOD_F_CLOCKED)
             snprintf(d, sizeof d, "clock and transport only");
-        lv_label_set_text(H.midi_rows[i], d);
+        if (H.midi_rows[i]) lv_label_set_text(H.midi_rows[i], d);
     }
 }
 

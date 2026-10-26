@@ -1,4 +1,4 @@
-# Tulip CC in C: launcher, Studio, metroseq, GinTonix
+# Tulip CC in C: launcher, Studio, metroseq, GinTonix, Wavetron
 
 Native ESP32-S3 firmware for the [Tulip Creative Computer](https://github.com/shorepine/tulipcc),
 with no MicroPython or AMY:
@@ -10,10 +10,10 @@ with no MicroPython or AMY:
   * Settings, touch calibration, and a **debug REPL** (on screen and over USB serial).
 * **[Studio](docs/STUDIO.md)**: several apps running **at the same time on one clock**.
   * Switch between them with the blue square, as on the original Tulip.
-  * Tags: metroseq (SEQUENCER, CV), GinTonix (DRUMS) and Sloe (SYNTH).
+  * Tags: metroseq (SEQUENCER, CV), GinTonix (DRUMS), Sloe and Wavetron (SYNTH).
   * One tempo and transport, MIDI clock / Start / Stop for all of them.
   * A mixer on the Studio home page: a level, mute and peak meter per app.
-  * metroseq's tracks can play Sloe on the Tulip, or go out of MIDI OUT.
+  * metroseq's tracks can play Sloe or Wavetron on the Tulip, or go out of MIDI OUT.
 * **metroseq**: a port of [`reference/metropolix_tulip.py`](reference/metropolix_tulip.py).
   It is a Metropolix-style two-track CV sequencer driving Makerfabs Mabee (GP8413) DACs,
   with rock-solid timing. Design and verification are in
@@ -26,11 +26,19 @@ with no MicroPython or AMY:
   * Your Python kit and bank files load as they are.
 * **Sloe**: a small subtractive synth, the destination for routed sequencer tracks.
   It is a page inside Studio, and also an app on its own, played from MIDI IN.
+* **[Wavetron](docs/WAVETRON.md)**: a port of the AMYboard sketch `wavetron_v1_2.py`, a
+  dual wavetable synth.
+  * 4 voices (MONO / UNISON / POLY), a 4 x 11 mod matrix with audio-rate FM, a filter and
+    effects.
+  * The 3-D wavetable waterfall, and your own WAV wavetables from `/files`.
+  * The sketch's patch files load as they are.
 * **hello**: the smallest standalone app, as a template.
 
 | Studio home | GinTonix |
 |---|---|
 | ![studio](docs/img/studio_1_home.png) | ![gintonix](docs/img/gintonix_1_main.png) |
+| **Wavetron** | **Sloe** |
+| ![wavetron](docs/img/wavetron_1_osc.png) | ![sloe](docs/img/sloe_1.png) |
 | **metroseq** | **Launcher** |
 | ![seq](docs/img/1_seq.png) | ![home](docs/img/launcher_1_home.png) |
 
@@ -41,15 +49,17 @@ with no MicroPython or AMY:
 ```
 launcher/              the launcher (factory app): UI, file browser, Wi-Fi, web server, REPL
   main/web/            the web app (one self-contained HTML file)
-apps/studio/           metroseq + GinTonix + Sloe together, on one clock
+apps/studio/           metroseq + GinTonix + Sloe + Wavetron together, on one clock
 apps/metroseq/         metroseq on its own
 apps/gintonix/         GinTonix on its own
 apps/sloe/             Sloe on its own (a synth played from MIDI IN)
+apps/wavetron/         Wavetron on its own
 apps/hello/            minimal standalone app template
 modules/               the Studio apps (each an ESP-IDF component)
   mod_metroseq/        the CV sequencer: engine/ (host-tested), platform/, ui/
   mod_gintonix/        the drum machine: core/ (host-tested), ui/
   mod_sloe/            the synth
+  mod_wavetron/        the wavetable synth: core/ (host-tested), ui/
 components/
   tulip_studio/        the Studio runtime: master clock, real-time task, MIDI in/out,
                        audio mixer, routing, the squares and the home page
@@ -62,13 +72,14 @@ tools/make_full_image.sh   build everything into tulip-full.bin
 tools/gen_gx_factory.py    GinTonix factory kits -> C (from gintonic_presets.py)
 tools/ui_preview/      render the on-device UIs to PNGs on a PC
 tests/                 host tests and parity checks against the Python originals
-reference/             the original MicroPython sketches
+reference/             the original MicroPython sketches (metroseq, GinTonix, Wavetron)
 ```
 
 ## Flash it
 
 **First time:** flash the full image over USB. It holds the launcher with **studio**, **sloe**,
-**metroseq** and **gintonix** preloaded:
+**metroseq** and **gintonix** preloaded (Wavetron is inside studio; `wavetron.bin`, Wavetron
+on its own, goes on afterwards from the launcher's WI-FI page):
 
 ```sh
 pip install esptool
@@ -90,7 +101,7 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 4 apps)
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 4 apps) + wavetron.bin
 
 # develop an app:
 cd apps/studio && idf.py set-target esp32s3 && idf.py build
