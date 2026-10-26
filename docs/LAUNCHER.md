@@ -52,7 +52,10 @@ in the launcher.
 
 **Why this design.** While an app runs, it **owns the whole machine**: both cores, all
 the RAM, every peripheral. That is what keeps an app like metroseq's real-time
-sequencer solid. The other approaches I considered:
+sequencer solid. To have **several apps running together** (metroseq + a drum machine
++ a synth on one clock), they are built into one image as Studio modules: see
+[STUDIO.md](STUDIO.md). The full image ships `studio` (all three) as well as `metroseq`
+and `gintonix` on their own. The other approaches I considered:
 
 | Approach | Why not (as the main app model) |
 |---|---|
@@ -83,7 +86,7 @@ sequencer solid. The other approaches I considered:
    XIP from PSRAM. Use the device partition table. `apps/hello` shows the 10-line setup.
 2. Call `tulip_app_init()` at the top of `app_main()`, and give the user a way home:
    `tulip_exit_to_launcher()`.
-3. Fit in 3 MB (metroseq is 0.6 MB; the hello app 0.57 MB).
+3. Fit in 3 MB (studio, with three apps, is 0.89 MB; the hello app 0.57 MB).
 4. **Don't `idf.py flash` an app.** That would overwrite the launcher. Push it instead
    (below).
 
@@ -174,9 +177,9 @@ shows `http://tulip.local`, the IP address, and a 4-digit **PIN**. HOME shows th
 
 Flash `tulip-full.bin` once over USB (`esptool.py --chip esp32s3 write_flash 0x0
 tulip-full.bin`). It contains the bootloader, the partition table, the launcher, and
-**metroseq preloaded** in slot 1. On first boot the launcher formats `/files`, then
-copies metroseq into `/files/apps`, so it shows up straight away. After that, apps only
-ever arrive over Wi-Fi or USB serial.
+**studio, metroseq and gintonix preloaded** in slots 1–3. On first boot the launcher
+formats `/files`, then copies them into `/files/apps`, so they show up straight away.
+After that, apps only ever arrive over Wi-Fi or USB serial.
 
 > This replaces the Tulip firmware *and* its `/user` filesystem region. Back up your
 > `/user` files before the first flash. To go back to Tulip, flash a Tulip

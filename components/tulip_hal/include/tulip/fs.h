@@ -6,8 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifndef TULIP_FS_ROOT   // (the host UI preview points it at a local folder)
 #define TULIP_FS_ROOT "/files"
-#define TULIP_APPS_DIR "/files/apps"
+#endif
+#define TULIP_APPS_DIR TULIP_FS_ROOT "/apps"
 
 // Mount /files. The launcher passes format_if_needed=true (first boot, or a
 // damaged volume); apps should pass false.

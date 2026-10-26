@@ -1,4 +1,4 @@
-# Tulip CC in C: launcher + metroseq
+# Tulip CC in C: launcher, Studio, metroseq, GinTonix
 
 Native ESP32-S3 firmware for the [Tulip Creative Computer](https://github.com/shorepine/tulipcc),
 with no MicroPython or AMY:
@@ -8,44 +8,64 @@ with no MicroPython or AMY:
   * Join Wi-Fi, then move apps and files from **any browser** (`http://tulip.local`) or
     a terminal (`tools/tulip.py`).
   * Settings, touch calibration, and a **debug REPL** (on screen and over USB serial).
+* **[Studio](docs/STUDIO.md)**: several apps running **at the same time on one clock**.
+  * Switch between them with the blue square, as on the original Tulip.
+  * Tags: metroseq (SEQUENCER, CV), GinTonix (DRUMS) and Sloe (SYNTH).
+  * One tempo and transport, MIDI clock / Start / Stop for all of them.
+  * metroseq's tracks can play Sloe on the Tulip, or go out of MIDI OUT.
 * **metroseq**: a port of [`reference/metropolix_tulip.py`](reference/metropolix_tulip.py).
   It is a Metropolix-style two-track CV sequencer driving Makerfabs Mabee (GP8413) DACs,
-  with rock-solid timing: the sequencer has a core to itself. It is now an app under the
-  launcher. Design and verification are in **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**.
-* **hello**: the smallest app, as a template for your own.
+  with rock-solid timing. Design and verification are in
+  **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**.
+* **[GinTonix](docs/GINTONIX.md)**: a port of
+  [`reference/gintonix/gintonix.py`](reference/gintonix/gintonix.py), the
+  Microtonic-style drum machine.
+  * 8 synth drums, 12 patterns, morph, fills, the kit bank.
+  * Native DSP, sample-accurate on the master clock.
+  * Your Python kit and bank files load as they are.
+* **Sloe**: a small subtractive synth, the destination for routed sequencer tracks.
+* **hello**: the smallest standalone app, as a template.
 
-| Launcher | Files |
+| Studio home | GinTonix |
 |---|---|
-| ![home](docs/img/launcher_1_home.png) | ![files](docs/img/launcher_2_files.png) |
-| **metroseq** | **Web transfer** |
-| ![seq](docs/img/1_seq.png) | ![web](docs/img/web_app.png) |
+| ![studio](docs/img/studio_1_home.png) | ![gintonix](docs/img/gintonix_1_main.png) |
+| **metroseq** | **Launcher** |
+| ![seq](docs/img/1_seq.png) | ![home](docs/img/launcher_1_home.png) |
 
 *(Device screens are rendered from the real UI code by `tools/ui_preview`.)*
 
 ## Layout
 
 ```
-launcher/            the launcher (factory app): UI, file browser, Wi-Fi, web server, REPL
-  main/web/          the web app (one self-contained HTML file)
-apps/metroseq/       the CV sequencer app
-apps/hello/          minimal app template
+launcher/              the launcher (factory app): UI, file browser, Wi-Fi, web server, REPL
+  main/web/            the web app (one self-contained HTML file)
+apps/studio/           metroseq + GinTonix + Sloe together, on one clock
+apps/metroseq/         metroseq on its own
+apps/gintonix/         GinTonix on its own
+apps/hello/            minimal standalone app template
+modules/               the Studio apps (each an ESP-IDF component)
+  mod_metroseq/        the CV sequencer: engine/ (host-tested), platform/, ui/
+  mod_gintonix/        the drum machine: core/ (host-tested), ui/
+  mod_sloe/            the synth
 components/
-  tulip_hal/         shared by every app: panel + LVGL, touch + calibration, I2C,
-                     /files, settings, app lifecycle; partition table + base sdkconfig
-  lvgl/              LVGL v9.2.2 (git submodule)
-  mdns/              vendored from espressif/esp-protocols (tulip.local)
-tools/tulip.py       push/pull/launch over Wi-Fi (Python standard library only)
+  tulip_studio/        the Studio runtime: master clock, real-time task, MIDI in/out,
+                       audio mixer, routing, the squares and the home page
+  tulip_hal/           shared by every app: panel + LVGL, touch + calibration, I2C,
+                       /files, settings, app lifecycle; partition table + base sdkconfig
+  lvgl/                LVGL v9.2.2 (git submodule)
+  mdns/                vendored from espressif/esp-protocols (tulip.local)
+tools/tulip.py         push/pull/launch over Wi-Fi (Python standard library only)
 tools/make_full_image.sh   build everything into tulip-full.bin
-tools/ui_preview/    render the on-device UIs to PNGs on a PC
-tests/               host tests (engine, MIDI clock, touch cal, launcher core) and
-                     end-to-end web/CLI tests against a mock device
-reference/           the original MicroPython sketch
+tools/gen_gx_factory.py    GinTonix factory kits -> C (from gintonic_presets.py)
+tools/ui_preview/      render the on-device UIs to PNGs on a PC
+tests/                 host tests and parity checks against the Python originals
+reference/             the original MicroPython sketches
 ```
 
 ## Flash it
 
-**First time:** flash the full image over USB. It holds the launcher, with metroseq
-preloaded:
+**First time:** flash the full image over USB. It holds the launcher with **studio**,
+**metroseq** and **gintonix** preloaded:
 
 ```sh
 pip install esptool
@@ -57,7 +77,8 @@ your files up first. To go back, flash a [Tulip release](https://github.com/shor
 the same way.
 
 **After that:** put apps on over Wi-Fi from the launcher's WI-FI page. See
-[docs/LAUNCHER.md](docs/LAUNCHER.md).
+[docs/LAUNCHER.md](docs/LAUNCHER.md). To use your GinTonix banks and kits, copy your
+Tulip's `/user/gintonix` folder to `/files/gintonix`.
 
 ## Build it
 
@@ -66,17 +87,19 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + metroseq)
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 3 apps)
 
 # develop an app:
-cd apps/hello && idf.py set-target esp32s3 && idf.py build
-../../tools/tulip.py --pin <PIN> push build/hello.bin --launch
+cd apps/studio && idf.py set-target esp32s3 && idf.py build
+../../tools/tulip.py --pin <PIN> push build/studio.bin --launch
 ```
 
 **Apps are plain ESP-IDF `.bin` images** built on `components/tulip_hal/sdkconfig.tulip`.
 The launcher reads each app's name and version from the image itself. The reasons,
 and the rules an app must follow, are in [docs/LAUNCHER.md](docs/LAUNCHER.md#2-packaging-apps-recommendation).
-Don't `idf.py flash` an app, because that overwrites the launcher; push it instead.
+A Studio image combines **modules**; how to write one is in
+[docs/STUDIO.md](docs/STUDIO.md#5-writing-a-module). Don't `idf.py flash` an app,
+because that overwrites the launcher; push it instead.
 
 ## metroseq options (`idf.py menuconfig` → Metroseq)
 
@@ -86,23 +109,27 @@ Don't `idf.py flash` an app, because that overwrites the launcher; push it inste
 | `METRO_TOUCH_I2C_HZ` | 100000 | GT911 speed (Tulip's value) |
 | `METRO_CV_SET_RANGE_10V` | y | Force each GP8413 into its 0–10 V range at boot |
 | `METRO_DEFER_FLASH_WHILE_PLAYING` | y | Preset/project flash commits wait for STOP |
-| `METRO_TIMING_PROBE_GPIO` | -1 | Mirror TRK1 gate timing onto a pin for a scope (GPIO11 = MIDI OUT) |
+| `METRO_TIMING_PROBE_GPIO` | -1 | Mirror TRK1 gate timing onto a pin for a scope (GPIO11 is MIDI OUT now: pick a free pin) |
 
 **CV wiring:**
 * **TRK 1:** Mabee at 0x59. VOUT0 = gate (0/5 V), VOUT1 = pitch, 1 V/oct over the full
   0–10 V (C0 = 0 V, C10 = 10 V).
 * **TRK 2:** optional second Mabee with its A0 link cut (0x58).
 * **MERGE T2>T1:** both tracks share 0x59, with TRK 1 taking priority.
-* **MIDI IN:** clock and transport, enabled with SET → `CLOCK: MIDI`.
+* **MIDI:**
+  * **IN** (GPIO12): clock, transport and MMC go to every app when the clock is MIDI
+    (Studio home, or metroseq SET → `CLOCK: MIDI`); notes and CCs go by channel.
+  * **OUT** (GPIO11): clock out, GinTonix pattern out, routed tracks.
 * **Calibration:** measure VOUT1 at two notes and edit `CAL[]` in
-  `apps/metroseq/main/platform/cv_dac.c`.
+  `modules/mod_metroseq/platform/cv_dac.c`.
 * **Power:** if the Tulip browns out at power-on with a DAC attached, power the DAC from
   its own 5 V supply with a shared ground.
 
 ## Tests (no hardware needed)
 
 ```sh
-make -C tests test            # engine, MIDI clock, touch cal, launcher core, fuzz, Python parity
+make -C tests test            # master clock, MIDI, metroseq engine (+ Python parity), GinTonix
+                              # (player vs the Python, voices, files), Sloe, touch cal, launcher
 python3 tests/test_web.py     # tulip.py + the web app in headless Chromium vs a mock device
 make -C tools/ui_preview      # render every screen (needs Pillow)
 python3 tests/web_mock.py     # run the web app locally against a mock device

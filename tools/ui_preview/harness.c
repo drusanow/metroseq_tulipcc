@@ -45,13 +45,14 @@ static void touch_cb(lv_indev_t *i, lv_indev_data_t *d) {
 
 static uint32_t tick(void) { return s_ms; }
 
-extern void ui_poll(void);
+void (*hx_poll)(void);
+uint32_t hx_now_ms(void) { return s_ms; }
 
 void hx_pump(int ms) {
     for (int i = 0; i < ms; i += 5) {
         s_ms += 5;
         lv_timer_handler();
-        ui_poll();
+        if (hx_poll) hx_poll();
     }
 }
 

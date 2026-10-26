@@ -275,3 +275,24 @@ Now:
 * Base octave runs −2..+5. At −2 the lowest slider note is C0 = 0 V, and at +5 the highest
   is C10 = 10 V.
 * The GP8413 range register is still forced to 0–10 V at boot (`METRO_CV_SET_RANGE_10V`).
+
+## 8. Follow-up: metroseq inside Tulip Studio
+
+metroseq now runs in the Studio runtime ([STUDIO.md](STUDIO.md)), alone (`metroseq`) or
+alongside other apps (`studio`). What changed for its timing:
+
+* **The sequencer task is shared.** It became the Studio `rt` task
+  (`components/tulip_studio/src/rt.c`): same core, priority, GPTimer wake-and-spin, and
+  I2C ownership with touch in the gaps.
+* **One master clock delivers every 1/16.** That covers the internal tempo as well as
+  MIDI clock (`tclock.c`, mapped onto the engine by `engine/seq_clock.c`), so metroseq
+  and the drum machine share one grid.
+  * On 20 random patterns, all 16,821 CV events matched those of the engine's own clock
+    to the microsecond (`tests/test_midi_touch.c`).
+  * Gate lengths are computed from the exact tempo, not a rounded 1/16.
+* **PLAY starts the downbeat 20 ms ahead.** This lets audio apps place it exactly.
+  **RST** restarts metroseq's tracks on the next 1/16, in step with everyone else.
+* **Core 1 is shared.** The audio task (all apps' sound) sits on core 1 below the `rt`
+  and MIDI tasks, so it can never delay a gate. The preview voice is now part of that
+  mix.
+* **MIDI OUT:** GPIO11 is now MIDI OUT, so pick another pin for the timing probe.

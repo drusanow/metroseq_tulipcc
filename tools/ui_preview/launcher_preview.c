@@ -57,10 +57,10 @@ typedef struct {
     int slot;
 } fake_app_t;
 static const fake_app_t APPS[] = {
-    {"drumster.bin", "drumster", "0.4.2", 1183744, -1},
-    {"metroseq.bin", "metroseq", "1.3.0", 631440, 0},
-    {"scope.bin", "scope", "1.0.0", 402112, 1},
-    {"wavetable-lab.bin", "wavetable-lab", "2.1.0", 1517568, -1},
+    {"gintonix.bin", "gintonix", "1.0.0", 815104, 2},
+    {"hello.bin", "hello", "1.0.0", 588800, -1},
+    {"metroseq.bin", "metroseq", "2.0.0", 740976, 1},
+    {"studio.bin", "studio", "1.0.0", 891600, 0},
 };
 #define NAPPS 4
 int apps_scan(app_entry_t *out, int max) {
@@ -90,23 +90,26 @@ bool apps_launch(const char *path) { return true; }
 int apps_slots(app_slot_t out[APP_SLOTS]) {
     memset(out, 0, sizeof(app_slot_t) * APP_SLOTS);
     out[0].used = 1;
-    strcpy(out[0].name, "metroseq");
-    strcpy(out[0].version, "1.3.0");
+    strcpy(out[0].name, "studio");
+    strcpy(out[0].version, "1.0.0");
     out[1].used = 1;
-    strcpy(out[1].name, "scope");
-    strcpy(out[1].version, "1.0.0");
+    strcpy(out[1].name, "metroseq");
+    strcpy(out[1].version, "2.0.0");
+    out[2].used = 1;
+    strcpy(out[2].name, "gintonix");
+    strcpy(out[2].version, "1.0.0");
     return APP_SLOTS;
 }
 void apps_clear_slots(void) {}
 
 int fs_list(const char *dir, fs_entry_t *out, int max) {
-    static const fs_entry_t ROOT[] = {{"apps", true, 0}, {"metroseq", true, 0},
-                                      {"samples", true, 0}, {"readme.txt", false, 1874}};
+    static const fs_entry_t ROOT[] = {{"apps", true, 0}, {"gintonix", true, 0},
+                                      {"sloe", true, 0}, {"readme.txt", false, 1874}};
     static const fs_entry_t APPD[] = {{"experiments", true, 0},
-                                      {"drumster.bin", false, 1183744},
-                                      {"metroseq.bin", false, 631440},
-                                      {"scope.bin", false, 402112},
-                                      {"wavetable-lab.bin", false, 1517568}};
+                                      {"gintonix.bin", false, 815104},
+                                      {"hello.bin", false, 588800},
+                                      {"metroseq.bin", false, 740976},
+                                      {"studio.bin", false, 891600}};
     const fs_entry_t *src = ROOT;
     int n = 4;
     if (strcmp(dir, "/files/apps") == 0) {
@@ -152,9 +155,9 @@ size_t console_text_read(uint32_t *cursor, char *out, size_t max) {
         "internal: 217600 free (min 198144)\n"
         "psram:    7833600 free\n"
         "> slots\n"
-        "  ota_0: metroseq 1.3.0 (631440 bytes, last run #12)\n"
-        "  ota_1: scope 1.0.0 (402112 bytes, last run #9)\n"
-        "  ota_2: empty\n"
+        "  ota_0: studio 1.0.0 (891600 bytes, last run #12)\n"
+        "  ota_1: metroseq 2.0.0 (740976 bytes, last run #9)\n"
+        "  ota_2: gintonix 1.0.0 (815104 bytes, last run #4)\n"
         "  ota_3: empty\n"
         "> i2cscan\n"
         "  0x58 (Mabee DAC, A0 cut)\n"
@@ -172,6 +175,7 @@ size_t console_text_read(uint32_t *cursor, char *out, size_t max) {
 
 int main(void) {
     hx_init();
+    hx_poll = ui_poll;
     ui_create();
     hx_pump(1200);
     hx_save("launcher_0_cal_prompt");
@@ -180,7 +184,7 @@ int main(void) {
     hx_save("launcher_1_home");
 
     hx_tap(TAB(PG_FILES));
-    hx_tap(300, PAGE_Y + 108 + 2 * 48 + 22);   // select metroseq.bin
+    hx_tap(300, PAGE_Y + 108 + 3 * 48 + 22);   // select metroseq.bin
     hx_save("launcher_2_files");
     hx_tap(540, PAGE_Y + 52 + 21);              // DELETE -> confirm
     hx_save("launcher_3_delete_confirm");
@@ -205,7 +209,7 @@ int main(void) {
     hx_save("launcher_8_console");
 
     hx_tap(TAB(PG_HOME));
-    strcpy(g_install.name, "wavetable-lab");
+    strcpy(g_install.name, "hello");
     g_install.state = INSTALL_WRITING;
     g_install.pct = 62;
     hx_pump(200);

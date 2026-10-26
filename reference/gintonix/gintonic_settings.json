@@ -1,0 +1,1 @@
+{"mute": true, "midi_ch": 1, "cpu_auto": true, "cc": [[1, "g:morph"], [7, "g:master"]], "tempo": 112.0, "mmc": true, "sync_ms": 35, "v": 1, "clock_ext": false, "slot": 1, "cc_sel": true, "clock_out": true, "midi_out": 1}

@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "midi_clock.h"
+#include "seq_clock.h"
+#include "studio/midi_parse.h"
 #include "seq_engine.h"
 #include "tulip/touch_cal.h"
 
@@ -27,42 +28,21 @@ static int rnd(int n) {   // 0..n-1
     return (int)(rng % (uint32_t)n);
 }
 
-// --- MIDI parser -----------------------------------------------------------------
-
-static void test_parser(void) {
-    midi_parser_t p;
-    midi_parser_init(&p);
-    // note-on with a clock byte in the middle, a sysex with a clock inside,
-    // then song position 0x0102 = 2 + 1*128 = 130
-    const uint8_t bytes[] = {0x90, 60, 0xF8, 100, 0xF0, 1, 2, 0xF8, 3, 0xF7,
-                             0xF2, 0x02, 0x01, 0xFA, 0xFC, 0xFB};
-    int clocks = 0, spp = -1, start = 0, stop = 0, cont = 0;
-    for (unsigned i = 0; i < sizeof bytes; i++) {
-        midi_ev_t ev = midi_parse_byte(&p, bytes[i]);
-        if (ev.type == MIDI_EV_CLOCK) clocks++;
-        if (ev.type == MIDI_EV_SPP) spp = ev.arg;
-        if (ev.type == MIDI_EV_START) start++;
-        if (ev.type == MIDI_EV_STOP) stop++;
-        if (ev.type == MIDI_EV_CONTINUE) cont++;
-    }
-    CHECK(clocks == 2 && spp == 130 && start == 1 && stop == 1 && cont == 1,
-          "clocks %d spp %d start %d stop %d cont %d", clocks, spp, start, stop, cont);
-    printf("midi parser: real-time inside messages and sysex, SPP decode: ok\n");
-}
-
 // --- clock follower ----------------------------------------------------------------
 
 static pattern_t pat;
 static seq_engine_t eng;
 static seq_actions_t acts;
-static midi_clock_t mc;
+static tclock_t mc;
+static seq_clock_t sc;
 
+// The firmware's arrangement: the Studio master clock following MIDI,
+// driving the engine through seq_clock.
 static void send(uint8_t type, uint16_t arg, int64_t t) {
-    midi_ev_t ev = {type, arg};
     seq_actions_clear(&acts);
-    // the firmware runs advance() up to each event first
+    // the firmware runs the engine's own events up to each clock first
     seq_engine_advance(&eng, t, &acts);
-    midi_clock_event(&mc, &eng, &ev, t, &acts);
+    tclock_midi(&mc, type, arg, NULL, t);
 }
 
 static void setup(void) {
@@ -73,8 +53,12 @@ static void setup(void) {
     }
     pat.tracks[1].div_i = 0;
     seq_engine_init(&eng, &pat, 1);
-    seq_engine_set_ext_clock(&eng, true);
-    midi_clock_init(&mc);
+    tclock_init(&mc, 12000);
+    sc = (seq_clock_t){.e = &eng, .acts = &acts};
+    tclock_sink_t sink;
+    seq_clock_sink(&sc, &sink);
+    tclock_add_sink(&mc, &sink);
+    tclock_set_ext(&mc, true, 0);
 }
 
 // Gate-on times for out 0 while feeding clocks; returns how many.
@@ -84,7 +68,7 @@ static int run_clocks(int64_t *t, int nclocks, int64_t period, int jitter, int64
     for (int k = 0; k < nclocks; k++) {
         int64_t tc = *t + (jitter ? rnd(2 * jitter + 1) - jitter : 0);
         if (clock_times) clock_times[k] = tc;
-        send(MIDI_EV_CLOCK, 0, tc);
+        send(MP_CLOCK, 0, tc);
         for (int i = 0; i < acts.n; i++)
             if (acts.a[i].type == ACT_GATE && acts.a[i].out == 0 && acts.a[i].value && ng < maxg)
                 gates[ng++] = acts.a[i].due_us;
@@ -100,7 +84,7 @@ static void test_clock_follow(void) {
     static int64_t gates[256], ct[1024];
     // a few clocks before START so the tempo is known
     run_clocks(&t, 12, period, 300, gates, 0, NULL);
-    send(MIDI_EV_START, 0, t - period / 2);
+    send(MP_START, 0, t - period / 2);
     int ng = run_clocks(&t, 24 * 8, period, 300, gates, 256, ct);   // 8 beats
     // MULT on every 1/16: a gate on clock 0, 6, 12, ... at exactly the
     // clock's timestamp (phase-locked, no lag)
@@ -109,7 +93,7 @@ static void test_clock_follow(void) {
     for (int i = 0; i < ng && i < 32; i++)
         if (gates[i] != ct[i * 6]) exact = 0;
     CHECK(exact, "gates not on the 6th-clock timestamps");
-    int bpm = midi_clock_bpm_x10(&mc);
+    int bpm = tclock_ext_bpm_x10(&mc);
     CHECK(abs(bpm - 1200) <= 5, "bpm x10 %d", bpm);
     // gate length comes from the averaged tempo, not from the jittery clock
     CHECK(llabs(eng.ext_p16_us - 125000) < 500, "p16 %lld", (long long)eng.ext_p16_us);
@@ -123,14 +107,14 @@ static void test_stop_continue_spp(void) {
     const int64_t period = 20833;
     static int64_t gates[256];
     run_clocks(&t, 6, period, 0, gates, 0, NULL);
-    send(MIDI_EV_START, 0, t);
+    send(MP_START, 0, t);
     // downbeat clock + 32 more: five 1/16s played, stopped at clock 32
     run_clocks(&t, 1 + 32, period, 0, gates, 0, NULL);
     uint32_t clk_at_stop = eng.clk;
-    send(MIDI_EV_STOP, 0, t);
+    send(MP_STOP, 0, t);
     CHECK(!eng.playing, "still playing after STOP");
     run_clocks(&t, 10, period, 0, gates, 0, NULL);          // clocks while stopped
-    send(MIDI_EV_CONTINUE, 0, t);
+    send(MP_CONTINUE, 0, t);
     // clocks 33..35 finish that 1/16 silently; clock 36 is the next pulse
     int ng0 = run_clocks(&t, 3, period, 0, gates, 256, NULL);
     CHECK(ng0 == 0, "pulse fired early after CONTINUE");
@@ -139,9 +123,9 @@ static void test_stop_continue_spp(void) {
           eng.clk, clk_at_stop);
 
     // Song position: stop, locate to 1/16 #12, continue -> next pulse is #12
-    send(MIDI_EV_STOP, 0, t);
-    send(MIDI_EV_SPP, 12, t);
-    send(MIDI_EV_CONTINUE, 0, t);
+    send(MP_STOP, 0, t);
+    send(MP_SPP, 12, t);
+    send(MP_CONTINUE, 0, t);
     run_clocks(&t, 1, period, 0, gates, 0, NULL);
     CHECK(eng.clk == 12 && eng.playing, "SPP 12: clk %u", eng.clk);
     // with 8 one-pulse stages, 1/16 #12 is stage 5 (index 4)
@@ -157,16 +141,115 @@ static void test_tempo_change_and_dropout(void) {
     // one late clock (a hiccup) must not move the estimate
     t += 30000;
     run_clocks(&t, 1, 20833, 0, g, 0, NULL);
-    int b1 = midi_clock_bpm_x10(&mc);
+    int b1 = tclock_ext_bpm_x10(&mc);
     CHECK(abs(b1 - 1200) <= 5, "hiccup moved tempo to %d", b1);
     // a real change to 90 BPM is followed within a beat
     run_clocks(&t, 30, 27778, 0, g, 0, NULL);
-    int b2 = midi_clock_bpm_x10(&mc);
+    int b2 = tclock_ext_bpm_x10(&mc);
     CHECK(abs(b2 - 900) <= 5, "tempo after change %d", b2);
     // clock goes away -> forgotten
-    CHECK(!midi_clock_alive(&mc, t + MIDI_CLOCK_TIMEOUT_US + 1), "clock still alive");
+    CHECK(!tclock_ext_alive(&mc, t + TC_CLOCK_TIMEOUT_US + 1), "clock still alive");
     printf("tempo: hiccup ignored (%d.%d), 120->90 followed (%d.%d), dropout detected\n",
            b1 / 10, b1 % 10, b2 / 10, b2 % 10);
+}
+
+// --- the Studio master clock vs the engine's own clock --------------------------------
+
+// metroseq used to time its 1/16s itself; now the shared master clock
+// delivers them. Same pattern, same tempo: the CV output must be identical.
+typedef struct {
+    int64_t t;
+    uint8_t type, out;
+    int32_t value;
+} rec_t;
+
+static int record(seq_actions_t *a, rec_t *r, int n, int max) {
+    for (int i = 0; i < a->n && n < max; i++)
+        if (a->a[i].type == ACT_GATE || a->a[i].type == ACT_PITCH)
+            r[n++] = (rec_t){a->a[i].due_us, a->a[i].type, a->a[i].out, a->a[i].value};
+    seq_actions_clear(a);
+    return n;
+}
+
+static void test_master_equivalence(void) {
+    static rec_t ra[20000], rb[20000];
+    static pattern_t p;
+    int compared = 0, mismatches = 0;
+    for (int trial = 0; trial < 20; trial++) {
+        pattern_default(&p);
+        p.bpm = 60 + rnd(180);
+        for (int i = 0; i < NUM_STAGES; i++) {
+            p.stages[i].pulses = 1 + rnd(4);
+            p.stages[i].ratchet = 1 + rnd(3);
+            p.stages[i].gate = rnd(GATE_COUNT);
+            p.stages[i].slide = rnd(3) == 0;
+            p.stages[i].pitch = rnd(PITCH_RANGE);
+        }
+        for (int t = 0; t < NUM_TRACKS; t++) {
+            p.tracks[t].div_i = rnd(4);
+            p.tracks[t].swing = rnd(3) ? 0 : 20 + rnd(30);
+            p.tracks[t].gate_pct = 10 + rnd(90);
+        }
+        pattern_sanitise(&p);
+        const int64_t t0 = 50000, end = t0 + 8000000;
+        // A: the engine's own internal clock
+        static seq_engine_t ea, eb;
+        static seq_actions_t aa, ab;
+        seq_engine_init(&ea, &p, 7);
+        seq_actions_clear(&aa);
+        seq_engine_start(&ea, t0, &aa);
+        int na = record(&aa, ra, 0, 20000);
+        for (;;) {
+            int64_t due = seq_engine_next_due(&ea);
+            if (due > end) break;
+            seq_engine_advance(&ea, due, &aa);
+            na = record(&aa, ra, na, 20000);
+        }
+        // B: driven by the master clock (downbeat at t0)
+        seq_engine_init(&eb, &p, 7);
+        seq_actions_clear(&ab);
+        static tclock_t clk;
+        static seq_clock_t c;
+        tclock_init(&clk, p.bpm * 100);
+        c = (seq_clock_t){.e = &eb, .acts = &ab};
+        tclock_sink_t sink;
+        seq_clock_sink(&c, &sink);
+        tclock_add_sink(&clk, &sink);
+        tclock_play(&clk, t0 - TC_START_LEAD_US);
+        int nb = 0;
+        for (;;) {
+            int64_t d1 = seq_engine_next_due(&eb), d2 = tclock_next_due(&clk);
+            int64_t due = d1 < d2 ? d1 : d2;
+            if (due > end) break;
+            if (d1 <= due) seq_engine_advance(&eb, due, &ab);
+            tclock_advance(&clk, due);
+            nb = record(&ab, rb, nb, 20000);
+        }
+        // same events at the same times (order within one instant may differ)
+        if (na != nb) {
+            mismatches++;
+            printf("  trial %d: %d vs %d events\n", trial, na, nb);
+            continue;
+        }
+        for (int i = 0; i < na; i++) {
+            bool found = false;
+            for (int j = i > 8 ? i - 8 : 0; j < na && j < i + 8 && !found; j++)
+                found = rb[j].t == ra[i].t && rb[j].type == ra[i].type &&
+                        rb[j].out == ra[i].out && rb[j].value == ra[i].value;
+            if (!found) {
+                if (!mismatches)
+                    printf("  trial %d bpm %d event %d: %lld %d/%d/%d vs %lld %d/%d/%d\n", trial,
+                           p.bpm, i, (long long)ra[i].t, ra[i].type, ra[i].out, ra[i].value,
+                           (long long)rb[i].t, rb[i].type, rb[i].out, rb[i].value);
+                mismatches++;
+                break;
+            }
+        }
+        compared += na;
+    }
+    CHECK(!mismatches, "%d trials differ", mismatches);
+    printf("master clock vs engine's own clock: 20 random patterns, %d CV events identical\n",
+           compared);
 }
 
 // --- touch calibration -----------------------------------------------------------
@@ -221,10 +304,10 @@ static void test_touch_cal(void) {
 }
 
 int main(void) {
-    test_parser();
     test_clock_follow();
     test_stop_continue_spp();
     test_tempo_change_and_dropout();
+    test_master_equivalence();
     test_touch_cal();
     printf(failures ? "\n%d FAILURES\n" : "\nall midi/touch tests passed\n", failures);
     return failures ? 1 : 0;
