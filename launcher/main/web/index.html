@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tulip file transfer</title>
+<style>
+  :root {
+    --bg: #000; --fg: #b6b6aa; --dim: #6d6d55; --line: #48485a; --white: #fff;
+    --orange: #ff9100; --cyan: #24b6ff; --red: #910000; --green: #00b655; --sel: #242400;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 18px; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .logo { font-size: 26px; letter-spacing: 4px; color: var(--fg); font-weight: 300; }
+  .sub { color: var(--dim); text-transform: uppercase; letter-spacing: 1px; font-size: 12px; }
+  .grow { flex: 1; }
+  .meter { width: 220px; height: 6px; background: var(--line); }
+  .meter > div { height: 100%; background: var(--orange); width: 0; }
+  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  h2 { color: var(--orange); font-weight: 400; font-size: 18px; letter-spacing: 1px;
+    text-transform: uppercase; margin: 18px 0 10px; }
+  h2.cyan { color: var(--cyan); }
+  button, .btn { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 2px; padding: 8px 14px; font: inherit; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .5px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--orange); color: var(--white); }
+  button.active, button.primary { background: var(--orange); border-color: var(--orange); color: var(--white); }
+  button.danger { color: #ff8a8a; }
+  button.danger:hover { background: var(--red); border-color: var(--red); color: var(--white); }
+  button:disabled { opacity: .35; cursor: default; }
+  input[type=text], input[type=password] { background: var(--bg); color: var(--white);
+    border: 1px solid var(--line); border-radius: 2px; padding: 9px 10px; font: inherit; }
+  input:focus { outline: none; border-color: var(--orange); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .crumbs { font-size: 15px; color: var(--white); }
+  .crumbs a { color: var(--white); text-decoration: none; cursor: pointer; }
+  .crumbs a:hover { color: var(--orange); }
+  .crumbs span { color: var(--dim); margin: 0 6px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  td { border-top: 1px solid var(--line); padding: 8px 6px; vertical-align: middle; }
+  tr:hover td { background: #0d0d0d; }
+  td.name { color: var(--white); cursor: default; word-break: break-all; }
+  td.name.dir { cursor: pointer; }
+  td.meta { color: var(--dim); white-space: nowrap; width: 1%; }
+  td.act { text-align: right; white-space: nowrap; width: 1%; }
+  td.act button { padding: 5px 9px; margin-left: 4px; }
+  .ico { display: inline-block; width: 22px; color: var(--dim); }
+  .ico.dir { color: var(--orange); } .ico.app { color: var(--green); }
+  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .app { border: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .app .n { color: var(--white); font-size: 18px; }
+  .app .v { color: var(--dim); font-size: 12px; }
+  .app .r { font-size: 11px; letter-spacing: .5px; }
+  .app .r.ready { color: var(--green); } .app .r.inst { color: var(--orange); }
+  .app button { margin-top: 6px; align-self: flex-start; }
+  .muted { color: var(--dim); }
+  #drop { position: fixed; inset: 0; background: rgba(0,0,0,.85); border: 2px dashed var(--orange);
+    display: none; align-items: center; justify-content: center; color: var(--orange);
+    font-size: 22px; letter-spacing: 2px; z-index: 5; pointer-events: none; }
+  #drop.on { display: flex; }
+  .up { border: 1px solid var(--line); padding: 8px 10px; margin-top: 8px; }
+  .up .bar { height: 4px; background: var(--line); margin-top: 6px; }
+  .up .bar > div { height: 100%; width: 0; background: var(--orange); }
+  .up.done .bar > div { background: var(--green); }
+  .up.err { border-color: var(--red); }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: var(--bg); border: 1px solid var(--orange); color: var(--white);
+    padding: 10px 16px; display: none; z-index: 6; max-width: 90vw; }
+  #gate { max-width: 420px; margin: 12vh auto; border: 1px solid var(--line); padding: 26px; }
+  #gate input { width: 140px; font-size: 22px; letter-spacing: 8px; text-align: center; }
+  .hidden { display: none !important; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">TULIP</div>
+  <div class="sub">file transfer</div>
+  <div class="grow"></div>
+  <div class="sub" id="space"></div>
+  <div class="meter"><div id="meter"></div></div>
+</header>
+
+<div id="gate" class="hidden">
+  <h2>Enter PIN</h2>
+  <p class="muted">The PIN is shown on the Tulip's <b>WI-FI</b> page (and on HOME).</p>
+  <form class="row" id="pinform">
+    <input id="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" autofocus>
+    <button class="primary" type="submit">Unlock</button>
+  </form>
+  <p class="hint" id="gatemsg"></p>
+</div>
+
+<main id="app" class="hidden">
+  <h2>Apps</h2>
+  <div class="apps" id="apps"></div>
+  <p class="hint">Apps are ESP-IDF <b>.bin</b> images in <b>/apps</b>. Launching restarts the
+    Tulip into the app; press HOME in the app to come back.</p>
+
+  <h2 class="cyan">Files</h2>
+  <div class="row">
+    <div class="crumbs grow" id="crumbs"></div>
+    <button id="b-up">Upload files</button>
+    <button id="b-mkdir">New folder</button>
+    <button id="b-refresh">Refresh</button>
+    <input type="file" id="picker" multiple class="hidden">
+  </div>
+  <div class="hint">Drag files anywhere onto this page to upload them into the folder shown.</div>
+  <div id="uploads"></div>
+  <table><tbody id="list"></tbody></table>
+</main>
+
+<div id="drop">DROP TO UPLOAD</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let pin = localStorage.getItem("tulip-pin") || "";
+let cwd = "/apps";
+
+function toast(msg, ms = 3500) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(toast.h);
+  toast.h = setTimeout(() => (t.style.display = "none"), ms);
+}
+
+function fmtSize(n) {
+  if (n < 10240) return n + " B";
+  if (n < 10 * 1048576) return (n / 1024).toFixed(0) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+function join(dir, name) { return (dir === "/" ? "" : dir) + "/" + name; }
+
+async function api(method, path, params = {}) {
+  const q = new URLSearchParams(params).toString();
+  const r = await fetch(path + (q ? "?" + q : ""), { method, headers: { "X-Tulip-Pin": pin } });
+  let body = {};
+  try { body = await r.json(); } catch (e) { /* non-JSON */ }
+  if (r.status === 401) { showGate("Wrong PIN."); throw new Error("PIN"); }
+  if (!r.ok || body.ok === false) throw new Error(body.error || ("HTTP " + r.status));
+  return body;
+}
+
+function showGate(msg) {
+  $("app").classList.add("hidden");
+  $("gate").classList.remove("hidden");
+  $("gatemsg").textContent = msg || "";
+  $("pin").value = "";
+  $("pin").focus();
+}
+
+$("pinform").onsubmit = async (e) => {
+  e.preventDefault();
+  pin = $("pin").value.trim();
+  try {
+    await api("GET", "/api/info");
+    localStorage.setItem("tulip-pin", pin);
+    $("gate").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    refreshAll();
+  } catch (err) {
+    if (err.message !== "PIN") $("gatemsg").textContent = err.message;
+  }
+};
+
+async function loadInfo() {
+  const info = await api("GET", "/api/info");
+  const used = info.total - info.free;
+  $("space").textContent = fmtSize(info.free) + " free";
+  $("meter").style.width = (info.total ? (100 * used / info.total) : 0) + "%";
+  const box = $("apps");
+  box.innerHTML = "";
+  if (!info.apps.length) {
+    box.innerHTML = '<div class="muted">No apps yet - upload a .bin into /apps.</div>';
+  }
+  for (const a of info.apps) {
+    const d = document.createElement("div");
+    d.className = "app";
+    d.innerHTML = '<div class="n"></div><div class="v"></div><div class="r"></div>';
+    d.querySelector(".n").textContent = a.name;
+    d.querySelector(".v").textContent = "v" + a.version + "  -  " + fmtSize(a.size) + "  -  " + a.path;
+    const r = d.querySelector(".r");
+    r.textContent = a.ready ? "READY" : "INSTALLS ON FIRST LAUNCH";
+    r.classList.add(a.ready ? "ready" : "inst");
+    const b = document.createElement("button");
+    b.className = "primary";
+    b.textContent = "Launch";
+    b.onclick = () => launch(a.path, a.name);
+    d.appendChild(b);
+    box.appendChild(d);
+  }
+}
+
+function crumbs() {
+  const c = $("crumbs");
+  c.innerHTML = "";
+  const parts = cwd.split("/").filter(Boolean);
+  const root = document.createElement("a");
+  root.textContent = "files";
+  root.onclick = () => go("/");
+  c.appendChild(root);
+  let acc = "";
+  for (const p of parts) {
+    acc += "/" + p;
+    const s = document.createElement("span");
+    s.textContent = "/";
+    c.appendChild(s);
+    const a = document.createElement("a");
+    a.textContent = p;
+    const target = acc;
+    a.onclick = () => go(target);
+    c.appendChild(a);
+  }
+}
+
+async function loadList() {
+  crumbs();
+  const res = await api("GET", "/api/ls", { path: cwd });
+  const tb = $("list");
+  tb.innerHTML = "";
+  if (cwd !== "/") {
+    const tr = tb.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = 3;
+    td.className = "name dir";
+    td.innerHTML = '<span class="ico dir">&#x2191;</span>..';
+    td.onclick = () => go(cwd.replace(/\/[^/]*$/, "") || "/");
+  }
+  if (!res.entries.length) {
+    const td = tb.insertRow().insertCell();
+    td.colSpan = 3;
+    td.className = "muted";
+    td.textContent = "This folder is empty.";
+  }
+  for (const e of res.entries) {
+    const path = join(cwd, e.name);
+    const isApp = !e.dir && /\.bin$/i.test(e.name);
+    const tr = tb.insertRow();
+    const n = tr.insertCell();
+    n.className = "name" + (e.dir ? " dir" : "");
+    const ico = document.createElement("span");
+    ico.className = "ico" + (e.dir ? " dir" : isApp ? " app" : "");
+    ico.textContent = e.dir ? "■" : isApp ? "▶" : "▫";
+    n.appendChild(ico);
+    n.appendChild(document.createTextNode(e.name));
+    if (e.dir) n.onclick = () => go(path);
+    const m = tr.insertCell();
+    m.className = "meta";
+    m.textContent = e.dir ? "folder" : fmtSize(e.size);
+    const act = tr.insertCell();
+    act.className = "act";
+    const add = (label, fn, cls) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.onclick = fn;
+      act.appendChild(b);
+    };
+    if (isApp) add("Launch", () => launch(path, e.name), "primary");
+    if (!e.dir) add("Download", () => download(path));
+    add("Rename", () => rename(path, e.name));
+    if (path !== "/apps") add("Delete", () => remove(path, e.name, e.dir), "danger");
+  }
+}
+
+async function refreshAll() {
+  try {
+    await Promise.all([loadInfo(), loadList()]);
+  } catch (err) {
+    if (err.message !== "PIN") toast(err.message);
+  }
+}
+
+function go(dir) { cwd = dir; loadList().catch((e) => toast(e.message)); }
+
+async function launch(path, name) {
+  if (!confirm("Launch " + name + " on the Tulip? It restarts into the app.")) return;
+  try {
+    await api("POST", "/api/launch", { path });
+    toast("Launching " + name + " - the Tulip is restarting into it.", 8000);
+  } catch (e) { toast(e.message); }
+}
+
+async function download(path) {
+  // fetch with the PIN header, then hand the browser a blob to save
+  try {
+    const r = await fetch("/api/file?" + new URLSearchParams({ path }), { headers: { "X-Tulip-Pin": pin } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = path.split("/").pop();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  } catch (e) { toast(e.message); }
+}
+
+async function rename(path, name) {
+  const to = prompt("New name", name);
+  if (!to || to === name) return;
+  try {
+    await api("POST", "/api/mv", { from: path, to: join(cwd, to) });
+    refreshAll();
+  } catch (e) { toast(e.message); }
+}
+
+async function remove(path, name, dir) {
+  if (!confirm(dir ? 'Delete the folder "' + name + '" and everything in it?' : 'Delete "' + name + '"?')) return;
+  try {
+    await api("POST", "/api/rm", { path });
+    refreshAll();
+  } catch (e) { toast(e.message); }
+}
+
+$("b-mkdir").onclick = async () => {
+  const name = prompt("Folder name");
+  if (!name) return;
+  try {
+    await api("POST", "/api/mkdir", { path: join(cwd, name) });
+    loadList();
+  } catch (e) { toast(e.message); }
+};
+$("b-refresh").onclick = refreshAll;
+$("b-up").onclick = () => $("picker").click();
+$("picker").onchange = (e) => { uploadAll([...e.target.files]); e.target.value = ""; };
+
+// --- uploads: one at a time, each with its own progress bar -----------------
+
+function uploadOne(file, dir) {
+  return new Promise((resolve) => {
+    const row = document.createElement("div");
+    row.className = "up";
+    row.innerHTML = '<div class="t"></div><div class="bar"><div></div></div>';
+    row.querySelector(".t").textContent = file.name + "  (" + fmtSize(file.size) + ")";
+    $("uploads").appendChild(row);
+    const bar = row.querySelector(".bar > div");
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", "/api/file?" + new URLSearchParams({ path: join(dir, file.name) }));
+    xhr.setRequestHeader("X-Tulip-Pin", pin);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) bar.style.width = (100 * e.loaded / e.total) + "%"; };
+    const finish = (ok, msg) => {
+      row.classList.add(ok ? "done" : "err");
+      bar.style.width = "100%";
+      row.querySelector(".t").textContent = file.name + "  -  " + msg;
+      setTimeout(() => row.remove(), ok ? 4000 : 12000);
+      resolve(ok);
+    };
+    xhr.onload = () => {
+      let b = {};
+      try { b = JSON.parse(xhr.responseText); } catch (e) { /* ignore */ }
+      if (xhr.status === 401) { finish(false, "wrong PIN"); showGate("Wrong PIN."); return; }
+      if (xhr.status !== 200 || !b.ok) { finish(false, b.error || ("failed (HTTP " + xhr.status + ")")); return; }
+      finish(true, b.app ? ("uploaded - app " + b.app.name + " v" + b.app.version) : "uploaded");
+    };
+    xhr.onerror = () => finish(false, "connection lost");
+    xhr.send(file);
+  });
+}
+
+async function uploadAll(files) {
+  const dir = cwd;
+  for (const f of files) await uploadOne(f, dir);
+  if (files.some((f) => /\.bin$/i.test(f.name)) && !dir.startsWith("/apps"))
+    toast("Tip: apps are only listed when they are in /apps.", 6000);
+  refreshAll();
+}
+
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => { e.preventDefault(); if (++dragDepth === 1) $("drop").classList.add("on"); });
+window.addEventListener("dragleave", () => { if (--dragDepth === 0) $("drop").classList.remove("on"); });
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  $("drop").classList.remove("on");
+  if (!$("app").classList.contains("hidden")) uploadAll([...e.dataTransfer.files]);
+});
+
+// --- start ----------------------------------------------------------------------
+if (pin) {
+  api("GET", "/api/info").then(() => {
+    $("app").classList.remove("hidden");
+    refreshAll();
+  }).catch((e) => { if (e.message !== "PIN") showGate(e.message); });
+} else {
+  showGate("");
+}
+</script>
+</body>
+</html>

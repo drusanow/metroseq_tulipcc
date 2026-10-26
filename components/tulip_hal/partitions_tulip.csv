@@ -1,0 +1,18 @@
+# Tulip CC device partition table (32 MB flash). Written once, with the launcher.
+#
+#   factory    the launcher
+#   ota_0..3   app slots: the launcher copies an app image here and boots it;
+#              a slot that already holds the app is reused (instant launch)
+#   storage    FAT file store, /files on the device (apps live in /files/apps)
+#   nvs        settings; each app uses its own namespace ("tulip" is shared)
+#
+# Name,   Type, SubType, Offset,    Size
+nvs,      data, nvs,     0x9000,    0x40000
+otadata,  data, ota,     0x49000,   0x2000
+phy_init, data, phy,     0x4B000,   0x1000
+factory,  app,  factory, 0x50000,   0x300000
+ota_0,    app,  ota_0,   0x350000,  0x300000
+ota_1,    app,  ota_1,   0x650000,  0x300000
+ota_2,    app,  ota_2,   0x950000,  0x300000
+ota_3,    app,  ota_3,   0xC50000,  0x300000
+storage,  data, fat,     0xF50000,  0x10B0000
