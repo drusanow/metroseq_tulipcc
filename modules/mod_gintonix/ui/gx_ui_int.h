@@ -139,7 +139,7 @@
 #define F_MID   (&lv_font_montserrat_16)
 #define F_BIG   (&lv_font_montserrat_20)
 
-#define PAGE_Y   44
+#define PAGE_Y   (STUDIO_HDR_LINE_Y + 2)
 #define PAGE_H   (600 - PAGE_Y)
 #define CELL_H   118
 #define KNOB     64

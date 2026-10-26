@@ -6,14 +6,12 @@
 
 #include "app.h"
 #include "lvgl.h"
+#include "studio/studio.h"
 
 // --- layout (1024 x 600), same numbers as the Python -----------------------
 #define LCD_W       1024
 #define LCD_H       600
-#define SCREEN_TOP  8
-#define HDR_H       52
-#define HDR_BTN_H   42
-#define PAGE_Y      (SCREEN_TOP + HDR_H + 6)
+#define PAGE_Y      (STUDIO_HDR_LINE_Y + 8)   // below the Studio header
 #define PAGE_H      (600 - PAGE_Y - 6)
 #define SEQ_X0      34
 #define COL_W       122
@@ -21,31 +19,36 @@
 #define SLIDER_H    250
 #define SLIDER_W    20
 
-// --- palette: the Python's RGB332 values -----------------------------------
+// --- palette: the Studio look (studio/widgets.h), as RGB332 bytes ----------
+// Black pages, thin olive-grey outlines; a button is outlined while it's
+// neutral and fills with its colour when it means something (on, playing,
+// a gate type). Every colour here survives the panel's RGB332 palette.
 #define RGB332(r, g, b) ((uint8_t)((((r) >> 5) << 5) | (((g) >> 5) << 2) | ((b) >> 6)))
 
 #define C_BG            0
-#define C_PANEL         RGB332(38, 38, 50)
-#define C_PANEL2        RGB332(28, 28, 38)
-#define C_BTN           RGB332(60, 110, 200)
-#define C_BTN_DK        RGB332(50, 55, 75)
-#define C_PLAY          RGB332(40, 170, 90)
-#define C_STOP          RGB332(200, 60, 50)
-#define C_ACCENT        RGB332(150, 90, 200)
-#define C_FLASH         RGB332(255, 140, 0)
-#define C_LED_OFF       RGB332(40, 45, 55)
-#define C_ON            RGB332(0, 210, 120)
-#define C_TRK0          RGB332(70, 170, 255)
-#define C_TRK1          RGB332(255, 150, 40)
-#define C_SKIP          RGB332(120, 60, 60)
-#define C_SLIDE         RGB332(120, 90, 200)
-#define C_SEL           RGB332(240, 190, 40)
-#define C_PRESET_CUR    RGB332(255, 150, 40)
-#define C_SLIDER_TRACK  RGB332(205, 205, 205)
-#define C_KNOB_FRAME    0
-#define C_KNOB_SEQ      RGB332(225, 40, 40)
-#define C_KNOB_MOD      RGB332(70, 150, 255)
-#define C_MOD_ZERO      RGB332(60, 120, 240)
+#define C_PANEL         0                          // page background
+#define C_PANEL2        RGB332(0x49, 0x49, 0x55)   // rules, popup frames
+#define C_EDGE          RGB332(0x6d, 0x6d, 0x55)   // button outline
+#define C_DIM           RGB332(0x92, 0x92, 0xaa)   // secondary text
+#define C_BTN           RGB332(0x24, 0x24, 0x24)   // neutral (outlined) buttons
+#define C_BTN_DK        RGB332(0x00, 0x00, 0x24)   // neutral, off state
+#define C_PLAY          RGB332(0x6d, 0xff, 0x00)
+#define C_STOP          RGB332(0xff, 0x24, 0x00)
+#define C_ACCENT        RGB332(0x24, 0xb6, 0xff)   // metroseq's colour (cyan)
+#define C_FLASH         RGB332(0xff, 0x92, 0x00)
+#define C_LED_OFF       RGB332(0x24, 0x24, 0x24)
+#define C_ON            RGB332(0x6d, 0xff, 0x00)
+#define C_TRK0          RGB332(0x24, 0xb6, 0xff)
+#define C_TRK1          RGB332(0xff, 0x92, 0x00)
+#define C_SKIP          RGB332(0xff, 0x24, 0x00)
+#define C_SLIDE         RGB332(0xff, 0x6d, 0xff)
+#define C_SEL           RGB332(0xff, 0xdb, 0x00)
+#define C_PRESET_CUR    RGB332(0xff, 0x92, 0x00)
+#define C_SECTION       RGB332(0xff, 0x92, 0x00)   // section titles (orange)
+#define C_SLIDER_TRACK  RGB332(0x24, 0x24, 0x24)
+#define C_KNOB_SEQ      RGB332(0x24, 0xb6, 0xff)   // SEQ pitch fill
+#define C_KNOB_MOD      RGB332(0xff, 0x92, 0x00)   // MOD lane fill
+#define C_MOD_ZERO      RGB332(0x6d, 0x6d, 0x55)
 
 extern const uint8_t C_TRK[NUM_TRACKS];
 extern const uint8_t C_GATE[GATE_COUNT];
@@ -75,6 +78,7 @@ void ui_btn_flash(ui_btn_t *b);
 
 lv_obj_t *ui_panel(lv_obj_t *parent, int x, int y, int w, int h, uint8_t color, int radius);
 lv_obj_t *ui_label(lv_obj_t *parent, const char *text, int x, int y);
+lv_obj_t *ui_section(lv_obj_t *parent, const char *text, int x, int y);   // orange title
 lv_obj_t *ui_led(lv_obj_t *parent, int x, int y, int w, int h);
 void ui_led_set(lv_obj_t *led, uint8_t color);
 void ui_style_bar_slider(lv_obj_t *sl, uint8_t center);

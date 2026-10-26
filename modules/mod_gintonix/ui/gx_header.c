@@ -101,27 +101,31 @@ static void del_cb(void *ud) {
     delete_slot(g_gxset.slot);
 }
 
+#define Y  STUDIO_HDR_Y       // the same header shape as every Studio app
+#define H_ STUDIO_HDR_BTN_H
+
 void header_create(lv_obj_t *s) {
     lv_obj_t *g = sw_box(s, 0, 0, 1024, PAGE_Y - 2, C_BG, 0);
     lv_obj_add_flag(g, LV_OBJ_FLAG_CLICKABLE);
-    sw_label(g, "GINTONIX", F_BIG, C_TEXT, 6, 9, 0, false);
+    sw_label(g, "GINTONIX", F_BIG, C_TEXT, 6, 13, 0, false);
     static const char *const names[4] = {"MAIN", "SEQ", "MIDI", "TOOLS"};
     for (int j = 0; j < 4; j++)
-        H.pages[j] = sw_btn(g, names[j], 128 + j * 62, 5, 58, 32, ACC, page_cb, (void *)(intptr_t)j,
+        H.pages[j] = sw_btn(g, names[j], 128 + j * 62, Y, 58, H_, ACC, page_cb, (void *)(intptr_t)j,
                             NULL);
-    H.kit_pick = pick_new(g, 380, 5, 70, 32, ACC, "LOAD KIT", kit_cb);
+    H.kit_pick = pick_new(g, 380, Y, 70, H_, ACC, "LOAD KIT", kit_cb);
     open_kits();
-    sw_btn(g, "<", 456, 5, 28, 32, ACC, step_slot, (void *)-1, NULL);
-    H.slot_pick = pick_new(g, 486, 5, 150, 32, ACC, "KIT SLOT", slot_cb);
-    sw_btn(g, ">", 638, 5, 28, 32, ACC, step_slot, (void *)1, NULL);
-    sw_btn(g, "LOAD", 670, 5, 52, 32, ACC, load_cb, NULL, NULL);
-    sw_btn(g, "SAVE...", 726, 5, 66, 32, ACC, save_cb, NULL, NULL);
-    H.del_btn = sw_btn(g, "DEL", 796, 5, 46, 32, ACC, del_cb, NULL, NULL);
-    H.cpu = sw_label(g, "", F_SMALL, C_DIM, 848, 2, 100, false);
-    H.status = sw_label(g, "", F_SMALL, C_DIM, 848, 20, 100, false);
+    sw_btn(g, "<", 456, Y, 36, H_, ACC, step_slot, (void *)-1, NULL);
+    H.slot_pick = pick_new(g, 496, Y, 134, H_, ACC, "KIT SLOT", slot_cb);
+    sw_btn(g, ">", 634, Y, 36, H_, ACC, step_slot, (void *)1, NULL);
+    sw_btn(g, "LOAD", 674, Y, 48, H_, ACC, load_cb, NULL, NULL);
+    sw_btn(g, "SAVE...", 726, Y, 66, H_, ACC, save_cb, NULL, NULL);
+    H.del_btn = sw_btn(g, "DEL", 796, Y, 46, H_, ACC, del_cb, NULL, NULL);
+    H.cpu = sw_label(g, "", F_SMALL, C_DIM, 848, 10, 78, false);
+    H.status = sw_label(g, "", F_SMALL, C_DIM, 848, 28, 78, false);
     lv_label_set_long_mode(H.status, LV_LABEL_LONG_CLIP);
     // the Studio squares: blue = next app, red = Studio home / launcher
-    studio_chrome(g, 1024 - 2 * 32 - 6 - 6, 5, 32);
+    studio_chrome(g);
+    sw_line(g, 0, STUDIO_HDR_LINE_Y, 1024, 1);
 }
 
 void header_tick(uint32_t now) {

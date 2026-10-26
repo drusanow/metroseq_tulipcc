@@ -6,6 +6,7 @@
 
 #include "platform/storage.h"
 #include "tulip/touchcal_ui.h"
+#include "studio/widgets.h"
 #include "ui_common.h"
 
 static struct {
@@ -74,24 +75,31 @@ void ui_header_info(const char *t) {
     lv_label_set_text(H.info, t);
 }
 
+// The Studio header shape (studio.h): buttons STUDIO_HDR_BTN_H tall at
+// STUDIO_HDR_Y, the app's name on the left, the squares on the right.
 static void header_create(lv_obj_t *scr) {
-    lv_obj_t *p = ui_panel(scr, 0, SCREEN_TOP, 1024, HDR_H, C_PANEL2, 0);
-    int y = (HDR_H - HDR_BTN_H) / 2;
-    H.play_btn = ui_btn(p, "PLAY", 8, 92, HDR_BTN_H, toggle_play, 0, C_PLAY, y, NULL);
-    ui_btn(p, "RST", 108, 56, HDR_BTN_H, reset_sequence, 0, C_BTN_DK, y, NULL);
-    ui_btn(p, "-", 180, 40, HDR_BTN_H, bpm_down, 0, C_BTN, y, bpm_down_fast);
-    H.bpm_label = ui_label(p, "120 BPM", 226, 18);
-    ui_btn(p, "+", 300, 40, HDR_BTN_H, bpm_up, 0, C_BTN, y, bpm_up_fast);
+    const int y = STUDIO_HDR_Y, h = STUDIO_HDR_BTN_H;
+    lv_obj_t *p = ui_panel(scr, 0, 0, 1024, STUDIO_HDR_LINE_Y, C_BG, 0);
+    lv_obj_t *t = ui_label(p, "METROSEQ", 6, 15);
+    lv_obj_set_style_text_font(t, SW_F_MID, 0);
+    H.play_btn = ui_btn(p, "PLAY", 134, 84, h, toggle_play, 0, C_PLAY, y, NULL);
+    ui_btn(p, "RST", 224, 50, h, reset_sequence, 0, C_BTN_DK, y, NULL);
+    ui_btn(p, "-", 284, 40, h, bpm_down, 0, C_BTN, y, bpm_down_fast);
+    H.bpm_label = ui_label(p, "120 BPM", 326, 19);
+    lv_obj_set_width(H.bpm_label, 76);
+    lv_obj_set_style_text_align(H.bpm_label, LV_TEXT_ALIGN_CENTER, 0);
+    ui_btn(p, "+", 404, 40, h, bpm_up, 0, C_BTN, y, bpm_up_fast);
     static const char *names[4] = {"SEQ", "TRK", "MOD", "SET"};
     for (int i = 0; i < 4; i++)
-        H.page_btns[i] = ui_btn(p, names[i], 356 + i * 66, 60, HDR_BTN_H, page_cb, i, C_BTN_DK, y,
-                                NULL);
-    H.cv_btn = ui_btn(p, "CV", 624, 54, HDR_BTN_H, toggle_cv, 0, C_BTN_DK, y, NULL);
-    H.info = ui_label(p, "", 688, 18);
-    // the Studio squares: blue = next app, red = Studio home / launcher
-    lv_obj_set_width(H.info, 230);
+        H.page_btns[i] = ui_btn(p, names[i], 456 + i * 62, 58, h, page_cb, i, C_BTN_DK, y, NULL);
+    H.cv_btn = ui_btn(p, "CV", 708, 50, h, toggle_cv, 0, C_BTN_DK, y, NULL);
+    H.info = ui_label(p, "", 766, 19);
+    lv_obj_set_style_text_color(H.info, c332(C_DIM), 0);
+    lv_obj_set_width(H.info, STUDIO_SQ_X - 766 - 6);
     lv_label_set_long_mode(H.info, LV_LABEL_LONG_CLIP);
-    studio_chrome(p, 1024 - 2 * HDR_BTN_H - 6 - 8, y, HDR_BTN_H);
+    // the Studio squares: blue = next app, red = Studio home / launcher
+    studio_chrome(p);
+    ui_panel(scr, 0, STUDIO_HDR_LINE_Y, 1024, 1, C_PANEL2, 0);
 }
 
 // --- pages & playheads -------------------------------------------------------

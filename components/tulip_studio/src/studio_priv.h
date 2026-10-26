@@ -22,6 +22,13 @@ typedef struct {
 } studio_cfg_t;
 
 extern studio_cfg_t g_cfg;
+
+// The mixer: saved beside g_cfg (its own NVS record, so older settings load).
+typedef struct {
+    uint8_t level[STUDIO_MAX_MODULES];   // 0..100 %, 80 = 0 dB
+    uint8_t mute;                        // bit per module
+} studio_mix_t;
+extern studio_mix_t g_mix;
 extern const tmod_t *g_mods[STUDIO_MAX_MODULES];
 extern int g_nmods;
 extern volatile bool g_enabled[STUDIO_MAX_MODULES];

@@ -18,6 +18,7 @@ const tmod_t *g_mods[STUDIO_MAX_MODULES];
 int g_nmods;
 volatile bool g_enabled[STUDIO_MAX_MODULES];
 studio_cfg_t g_cfg;
+studio_mix_t g_mix;
 
 static bool s_files;
 static volatile bool s_cfg_dirty;
@@ -71,6 +72,8 @@ static void cfg_defaults(void) {
 
 void cfg_load(void) {
     cfg_defaults();
+    for (int m = 0; m < STUDIO_MAX_MODULES; m++) g_mix.level[m] = STUDIO_MIX_UNITY;
+    g_mix.mute = 0;
     char ns[16];
     ns_name(ns, sizeof ns);
     nvs_handle_t h;
@@ -82,6 +85,11 @@ void cfg_load(void) {
         nvs_get_blob(h, "cfg", &c, &sz) == ESP_OK && sz == sizeof c) {
         g_cfg = c;
     }
+    studio_mix_t mx;
+    sz = sizeof mx;
+    if (nvs_get_blob(h, "mix", &mx, &sz) == ESP_OK && sz == sizeof mx) g_mix = mx;
+    for (int m = 0; m < STUDIO_MAX_MODULES; m++)
+        if (g_mix.level[m] > 100) g_mix.level[m] = STUDIO_MIX_UNITY;
     nvs_close(h);
     if (g_cfg.bpm_x100 < TC_MIN_BPM_X100 || g_cfg.bpm_x100 > TC_MAX_BPM_X100) g_cfg.bpm_x100 = 12000;
     if (g_cfg.volume > 10) g_cfg.volume = 8;
@@ -94,6 +102,7 @@ static void cfg_save_now(void) {
     if (nvs_open(ns, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_u8(h, "ver", CFG_VERSION);
     nvs_set_blob(h, "cfg", &g_cfg, sizeof g_cfg);
+    nvs_set_blob(h, "mix", &g_mix, sizeof g_mix);
     nvs_commit(h);
     nvs_close(h);
 }

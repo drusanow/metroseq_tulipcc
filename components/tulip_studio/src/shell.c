@@ -4,6 +4,7 @@
 // running apps and kept from then on, so switching is instant and an app's
 // page state is still there when you come back. Hidden apps keep playing:
 // only their screen is off.
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -130,9 +131,11 @@ static void sq_red(void *ud) {
 
 static void sq_blue_long(lv_event_t *e) { studio_show_home(); }
 
-lv_obj_t *studio_chrome(lv_obj_t *parent, int x, int y, int h) {
+lv_obj_t *studio_chrome(lv_obj_t *parent) {
+    const int h = STUDIO_SQ, x = STUDIO_SQ_X, y = STUDIO_HDR_Y;
     int w = studio_multi() ? 2 * h + 6 : h;
-    lv_obj_t *box = sw_box(parent, x + (studio_multi() ? 0 : h + 6), y, w, h, -1, 0);
+    lv_obj_t *box = sw_box(lv_obj_get_screen(parent), x + (studio_multi() ? 0 : h + 6), y, w, h,
+                           -1, 0);
     lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);   // (children take the taps)
     if (studio_multi()) {
         lv_obj_t *b = sw_square(box, 0, 0, h, SW_SQ_BLUE, LV_SYMBOL_NEXT, sq_next, NULL);
@@ -163,11 +166,78 @@ static struct {
     } row[8];
     lv_obj_t *vol, *cpu, *midi_mon;
     lv_obj_t *midi_rows[STUDIO_MAX_MODULES];
+    // mixer
+    lv_obj_t *mute[STUDIO_MAX_MODULES], *meter[STUDIO_MAX_MODULES];
+    sw_slider_t *fader[STUDIO_MAX_MODULES];
+    int meter_px[STUDIO_MAX_MODULES];
     int play_shown, bpm_shown;
     uint32_t mon_seq;
 } H = {.play_shown = -1, .bpm_shown = -1};
 
 static void h_play(void *ud) { studio_toggle_play(); }
+
+// --- mixer ---------------------------------------------------------------------------------
+
+#define METER_W 280
+
+static float mix_get(void *ud) { return studio_mix_level((int)(intptr_t)ud) / 100.0f; }
+static void mix_set(void *ud, float v) { studio_mix_set_level((int)(intptr_t)ud, (int)(v * 100 + 0.5f)); }
+static void mix_text(void *ud, char *b, int n) {
+    int v = studio_mix_level((int)(intptr_t)ud);
+    if (v <= 0) {
+        snprintf(b, n, "OFF");
+        return;
+    }
+    float db = v >= STUDIO_MIX_UNITY
+                   ? 2.0f * (v - STUDIO_MIX_UNITY) / (100 - STUDIO_MIX_UNITY)
+                   : -40.0f * (float)(STUDIO_MIX_UNITY - v) / (STUDIO_MIX_UNITY - 1);
+    snprintf(b, n, "%+.1f dB", (double)db);
+}
+static const sw_slider_ops_t MIX_OPS = {mix_get, mix_set, mix_text};
+
+static void h_mute(void *ud) {
+    int m = (int)(intptr_t)ud;
+    studio_mix_set_mute(m, !studio_mix_muted(m));
+    sw_btn_set(H.mute[m], studio_mix_muted(m));
+}
+
+static void mixer_create(lv_obj_t *s, int y) {
+    sw_label(s, "MIXER", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
+    sw_label(s, "each app's level into the master VOLUME; M mutes", SW_F_SMALL, SW_DIM, 110, y + 2,
+             600, false);
+    int j = 0;
+    for (int i = 0; i < g_nmods; i++) {
+        if (!(g_mods[i]->flags & TMOD_F_AUDIO)) continue;
+        int x = 14 + j++ * 336, yy = y + 24;
+        H.mute[i] = sw_btn(s, "M", x, yy + 17, 38, 34, SW_RED, h_mute, (void *)(intptr_t)i, NULL);
+        sw_btn_set(H.mute[i], studio_mix_muted(i));
+        H.fader[i] = sw_slider(s, g_mods[i]->title, x + 46, yy, METER_W, 44, SW_GREEN, &MIX_OPS,
+                               (void *)(intptr_t)i);
+        sw_box(s, x + 46, yy + 47, METER_W, 4, 0x242424, 0);
+        H.meter[i] = sw_box(s, x + 46, yy + 47, 1, 4, SW_GREEN, 0);
+        H.meter_px[i] = -1;
+    }
+}
+
+// peak meters, ~15 Hz: a quick rise, a slow fall
+static void mixer_poll(void) {
+    static float hold[STUDIO_MAX_MODULES];
+    for (int i = 0; i < g_nmods; i++) {
+        if (!H.meter[i]) continue;
+        float p = studio_mix_peak(i);
+        hold[i] = p > hold[i] ? p : hold[i] * 0.8f;
+        // -48 .. 0 dB across the bar
+        float db = hold[i] > 1e-5f ? 20.0f * log10f(hold[i]) : -96.0f;
+        float f = (db + 48.0f) / 48.0f;
+        f = f < 0 ? 0 : (f > 1 ? 1 : f);
+        int px = (int)(f * METER_W);
+        if (px < 1) px = 1;
+        if (px == H.meter_px[i]) continue;
+        H.meter_px[i] = px;
+        lv_obj_set_width(H.meter[i], px);
+        lv_obj_set_style_bg_color(H.meter[i], sw_c(db > -1.0f ? SW_RED : db > -9.0f ? SW_YELLOW : SW_GREEN), 0);
+    }
+}
 static void h_rst(void *ud) { studio_restart(); }
 
 static void h_bpm(void *ud) {
@@ -247,19 +317,19 @@ static void home_create(void) {
     lv_obj_t *s = s_home = new_screen();
     // top bar
     sw_label(s, "TULIP STUDIO", SW_F_MID, SW_ORANGE, 14, 16, 0, false);
-    H.play = sw_btn(s, "PLAY", 200, 8, 96, 42, SW_GREEN, h_play, NULL, SW_F_MID);
-    sw_btn(s, "RST", 302, 8, 56, 42, SW_CYAN, h_rst, NULL, NULL);
-    lv_obj_t *b = sw_btn(s, "-", 372, 8, 44, 42, SW_CYAN, h_bpm, (void *)-1, SW_F_MID);
+    H.play = sw_btn(s, "PLAY", 200, 8, 96, 40, SW_GREEN, h_play, NULL, SW_F_MID);
+    sw_btn(s, "RST", 302, 8, 56, 40, SW_CYAN, h_rst, NULL, NULL);
+    lv_obj_t *b = sw_btn(s, "-", 372, 8, 44, 40, SW_CYAN, h_bpm, (void *)-1, SW_F_MID);
     sw_btn_repeat(b);
     H.bpm = sw_label(s, "", SW_F_MID, SW_TEXT, 418, 18, 110, true);
-    b = sw_btn(s, "+", 530, 8, 44, 42, SW_CYAN, h_bpm, (void *)1, SW_F_MID);
+    b = sw_btn(s, "+", 530, 8, 44, 40, SW_CYAN, h_bpm, (void *)1, SW_F_MID);
     sw_btn_repeat(b);
-    H.clk_int = sw_btn(s, "INT", 590, 8, 58, 42, SW_CYAN, h_clock, (void *)CLOCK_SRC_INT, NULL);
-    H.clk_midi = sw_btn(s, "MIDI", 652, 8, 64, 42, SW_CYAN, h_clock, (void *)CLOCK_SRC_MIDI, NULL);
-    H.clk_out = sw_btn(s, "CLK OUT", 722, 8, 82, 42, SW_CYAN, h_clock_out, NULL, NULL);
-    H.mmc = sw_btn(s, "MMC", 808, 8, 92, 42, SW_CYAN, h_mmc, NULL, NULL);
-    studio_chrome(s, 1024 - 2 * 42 - 6 - 10, 8, 42);
-    sw_line(s, 0, 58, 1024, 1);
+    H.clk_int = sw_btn(s, "INT", 590, 8, 58, 40, SW_CYAN, h_clock, (void *)CLOCK_SRC_INT, NULL);
+    H.clk_midi = sw_btn(s, "MIDI", 652, 8, 64, 40, SW_CYAN, h_clock, (void *)CLOCK_SRC_MIDI, NULL);
+    H.clk_out = sw_btn(s, "CLK OUT", 722, 8, 82, 40, SW_CYAN, h_clock_out, NULL, NULL);
+    H.mmc = sw_btn(s, "MMC", 808, 8, 92, 40, SW_CYAN, h_mmc, NULL, NULL);
+    studio_chrome(s);
+    sw_line(s, 0, STUDIO_HDR_LINE_Y, 1024, 1);
 
     // apps
     sw_label(s, "APPS", SW_F_LABEL, SW_ORANGE, 14, 68, 0, false);
@@ -327,6 +397,7 @@ static void home_create(void) {
         sw_label(s, g_mods[i]->title, SW_F_SMALL, SW_TEXT, 30, yy, 0, false);
         H.midi_rows[i] = sw_label(s, "", SW_F_SMALL, SW_DIM, 150, yy, 860, false);
     }
+    mixer_create(s, y + 26 + g_nmods * 22 + 8);
 
     // bottom line: volume, load, MIDI monitor, touch calibration
     sw_line(s, 0, 540, 1024, 1);
@@ -392,6 +463,11 @@ static void home_refresh(void) {
 }
 
 static void home_poll(void) {
+    static int64_t next_meter;
+    if (studio_now_us() > next_meter) {
+        next_meter = studio_now_us() + 66000;
+        mixer_poll();
+    }
     studio_clock_status_t st;
     studio_clock_status(&st);
     int ps = st.playing ? 1 : st.armed ? 2 : 0;

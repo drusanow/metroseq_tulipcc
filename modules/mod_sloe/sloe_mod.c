@@ -241,7 +241,7 @@ static void ui_create(lv_obj_t *s) {
     sw_btn(s, "+", 650, 8, 40, 40, ACCENT, ch_cb, (void *)1, SW_F_MID);
     sw_label(s, "or route a sequencer track to SLOE\non the Studio home page", SW_F_SMALL, DIM,
              704, 12, 220, false);
-    studio_chrome(s, 1024 - 2 * 40 - 6 - 8, 8, 40);
+    studio_chrome(s);
     sw_line(s, 0, 56, 1024, 1);
 
     // oscillators

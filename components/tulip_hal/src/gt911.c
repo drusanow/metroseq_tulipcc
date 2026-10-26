@@ -6,6 +6,8 @@
 #include "driver/gpio.h"
 #include "tulip/settings.h"
 #include "tulip/touch_cal.h"
+#include <stdlib.h>
+
 #include "esp_log.h"
 #include "freertos/queue.h"
 
@@ -18,6 +20,8 @@ static const char *TAG = "touch";
 #define REG_POINT1      0x814F
 #define I2C_TIMEOUT_MS  5
 #define HELD_TIMEOUT_US 150000   // no fresh sample for this long => lifted
+#define LATE_US         35000    // a poll this late may have missed a lift...
+#define JUMP_PX         40       // ...and a finger this far away is a new tap
 
 static i2c_master_dev_handle_t s_dev;
 static uint32_t s_hz;
@@ -25,7 +29,7 @@ static QueueHandle_t s_q;
 static TaskHandle_t s_listener;
 static bool s_held;
 static int16_t s_x, s_y, s_rx, s_ry;
-static int64_t s_last_sample;
+static int64_t s_last_sample, s_prev_sample;
 static int s_xmax = LCD_H_RES, s_ymax = LCD_V_RES;
 
 static portMUX_TYPE s_cal_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -139,6 +143,7 @@ bool gt911_poll(int64_t now_us) {
         }
         return true;
     }
+    s_prev_sample = s_last_sample;
     s_last_sample = now_us;
     int n = st & 0x0f;
     if (n > 0 && n <= 5) {
@@ -156,6 +161,15 @@ bool gt911_poll(int64_t now_us) {
         // clamp edge touches onto the screen instead of dropping them
         x = x < 0 ? 0 : (x >= LCD_H_RES ? LCD_H_RES - 1 : x);
         y = y < 0 ? 0 : (y >= LCD_V_RES ? LCD_V_RES - 1 : y);
+        // A busy moment can delay polls past a whole lift: the next tap
+        // then looks like the old finger sliding over, and LVGL never sees
+        // a press on the new button. A late sample far from the last one
+        // is a new tap - report the lift first.
+        if (s_held && now_us - s_prev_sample > LATE_US &&
+            (abs(x - s_x) > JUMP_PX || abs(y - s_y) > JUMP_PX)) {
+            s_held = false;
+            push(false);
+        }
         if (!s_held || x != s_x || y != s_y || rx != s_rx || ry != s_ry) {
             s_x = x;
             s_y = y;

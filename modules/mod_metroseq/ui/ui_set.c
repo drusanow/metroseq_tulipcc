@@ -255,7 +255,7 @@ void set_page_show(bool on) {
 void set_page_create(lv_obj_t *parent) {
     lv_obj_t *p = S.panel = ui_panel(parent, 0, PAGE_Y, 1024, PAGE_H, C_PANEL, 0);
 
-    ui_label(p, "QUANTISER", 30, 14);
+    ui_section(p, "QUANTISER", 30, 14);
     ui_label(p, "Root", 30, 56);
     ui_btn(p, "-", 120, 44, 38, quant_step, 0, C_BTN, 50, NULL);
     S.root_lbl = ui_label(p, "C", 178, 58);
@@ -270,7 +270,7 @@ void set_page_create(lv_obj_t *parent) {
     ui_btn(p, "+", 650, 44, 38, quant_step, 5, C_BTN, 50, NULL);
     S.range_lbl = ui_label(p, "", 430, 108);
 
-    ui_label(p, "CV OUTPUT  (TRK1 -> 0x59, TRK2 -> 0x58; VOUT0 gate, VOUT1 pitch, 1V/oct)", 30,
+    ui_section(p, "CV OUTPUT  (TRK1 -> 0x59, TRK2 -> 0x58; VOUT0 gate, VOUT1 pitch, 1V/oct)", 30,
              166);
     ui_btn(p, "CV ON/OFF", 30, 130, 42, cv_toggle, 0, C_BTN_DK, 196, NULL);
     ui_btn(p, "RESCAN DAC", 172, 150, 42, cv_rescan, 0, C_BTN_DK, 196, NULL);
@@ -283,7 +283,7 @@ void set_page_create(lv_obj_t *parent) {
     ui_btn(p, "TOGGLE", 680, 110, 42, toggle_audio, 0, C_BTN_DK, 240, NULL);
     S.audio_lbl = ui_label(p, "", 800, 246);
 
-    ui_label(p, "PRESETS  (tap to load; current slot lit orange; SAVE writes the chosen slot; "
+    ui_section(p, "PRESETS  (tap to load; current slot lit orange; SAVE writes the chosen slot; "
                 "COPY/PASTE the live seq)", 30, 296);
     for (int i = 0; i < NUM_PRESETS; i++) {
         char nm[4];
@@ -298,7 +298,7 @@ void set_page_create(lv_obj_t *parent) {
     S.paste_btn = ui_btn(p, "PASTE", 392, 84, 40, clip_paste, 0, C_BTN_DK, 372, NULL);
     S.info = ui_label(p, "", 496, 382);
 
-    ui_label(p, "PROJECT", 24, 436);
+    ui_section(p, "PROJECT", 24, 436);
     ui_btn(p, "SAVE AS...", 110, 120, 40, open_save_project, 0, C_PLAY, 428, NULL);
     ui_btn(p, "<", 250, 38, 40, project_step, 0, C_BTN, 428, NULL);
     S.proj_lbl = ui_label(p, "-- no project --", 300, 438);
@@ -349,7 +349,7 @@ void save_popup_show(void) {
 void save_popup_create(lv_obj_t *parent) {
     P.panel = ui_panel(parent, 0, 0, 560, 150, C_PANEL2, 8);
     lv_obj_align(P.panel, LV_ALIGN_CENTER, 0, -180);
-    ui_label(P.panel, "Save project as:", 16, 16);
+    ui_section(P.panel, "SAVE PROJECT AS", 16, 16);
     P.ta = lv_textarea_create(P.panel);
     lv_obj_set_size(P.ta, 528, 48);
     lv_obj_set_pos(P.ta, 16, 46);
@@ -357,6 +357,11 @@ void save_popup_create(lv_obj_t *parent) {
     lv_textarea_set_max_length(P.ta, MAX_PROJECT_NAME_LEN);
     lv_textarea_set_placeholder_text(P.ta, "Project name");
     lv_obj_add_event_cb(P.ta, ta_event, LV_EVENT_ALL, NULL);
+    lv_obj_set_style_bg_color(P.ta, c332(C_BG), 0);
+    lv_obj_set_style_border_color(P.ta, c332(C_EDGE), 0);
+    lv_obj_set_style_border_width(P.ta, 1, 0);
+    lv_obj_set_style_radius(P.ta, 0, 0);
+    lv_obj_set_style_text_color(P.ta, lv_color_white(), 0);
     ui_btn(P.panel, "Save", 316, 110, 40, popup_save, 0, C_PLAY, 102, NULL);
     ui_btn(P.panel, "Cancel", 434, 110, 40, popup_hide, 0, C_BTN_DK, 102, NULL);
     lv_obj_add_flag(P.panel, LV_OBJ_FLAG_HIDDEN);
@@ -365,5 +370,18 @@ void save_popup_create(lv_obj_t *parent) {
     lv_obj_set_size(P.kb, 1024, 260);
     lv_obj_align(P.kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(P.kb, P.ta);
+    // the Studio look: black keys with an outline
+    lv_obj_set_style_bg_color(P.kb, c332(C_BG), 0);
+    lv_obj_set_style_border_width(P.kb, 0, 0);
+    lv_obj_set_style_radius(P.kb, 0, 0);
+    lv_obj_set_style_bg_color(P.kb, c332(C_BG), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(P.kb, c332(C_EDGE), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(P.kb, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(P.kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(P.kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(P.kb, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(P.kb, c332(C_ACCENT), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(P.kb, c332(C_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(P.kb, lv_color_black(), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_add_flag(P.kb, LV_OBJ_FLAG_HIDDEN);
 }

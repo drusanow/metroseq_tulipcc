@@ -211,11 +211,28 @@ int studio_audio_load_pct(void);  // render time / real time
 uint32_t studio_audio_underruns(void);
 const char *studio_audio_problem(void);   // NULL, or why there's no sound
 
+// The mixer: one channel per audio app. level 0..100 % (STUDIO_MIX_UNITY =
+// 0 dB, 100 = +2 dB); peak is the channel's level since the last call, 0..1.
+#define STUDIO_MIX_UNITY 80
+void studio_mix_set_level(int mod, int pct);
+int studio_mix_level(int mod);
+void studio_mix_set_mute(int mod, bool on);
+bool studio_mix_muted(int mod);
+float studio_mix_peak(int mod);
+
 // --- UI -------------------------------------------------------------------------------------
 
-// The two Tulip squares (blue: next app, red: Studio home / launcher), for
-// a module's header. h = square size.
-lv_obj_t *studio_chrome(lv_obj_t *parent, int x, int y, int h);
+// Every app's header has the same shape, so the Tulip squares and the
+// header buttons are the same size and place on every page: buttons
+// STUDIO_HDR_BTN_H tall at y = STUDIO_HDR_Y, a rule at STUDIO_HDR_LINE_Y.
+#define STUDIO_HDR_Y        8
+#define STUDIO_HDR_BTN_H    40
+#define STUDIO_HDR_LINE_Y   56
+#define STUDIO_SQ           40                                   // the squares
+#define STUDIO_SQ_X         (1024 - 8 - 2 * STUDIO_SQ - 6)       // left square
+// The two Tulip squares (blue: next app, red: Studio home / launcher), at
+// the top right of parent's screen - the same on every app.
+lv_obj_t *studio_chrome(lv_obj_t *parent);
 void studio_show_home(void);
 void studio_next_app(void);
 void studio_show_module(int i);

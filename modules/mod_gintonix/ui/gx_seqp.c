@@ -8,7 +8,7 @@
 
 #define X0 150
 #define SW 54
-#define RH 46
+#define RH 45
 #define Y0 22
 
 static struct {

@@ -40,7 +40,7 @@ static const char *TAG = "rt";
 #define RT_STACK          8192
 #define WAKE_EARLY_US     40
 #define TOUCH_PERIOD_US   10000
-#define TOUCH_STARVE_US   100000
+#define TOUCH_STARVE_US   30000   // a tap lasts ~50 ms: never poll slower than this
 #define TOUCH_I2C_HZ      100000
 #define OUT_HEAP          256   // timed MIDI OUT bytes (drum pattern out + note-offs)
 

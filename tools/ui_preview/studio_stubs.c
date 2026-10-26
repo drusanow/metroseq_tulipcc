@@ -113,3 +113,11 @@ int studio_volume(void) { return g_cfg.volume; }
 int studio_audio_load_pct(void) { return 23; }
 uint32_t studio_audio_underruns(void) { return 0; }
 const char *studio_audio_problem(void) { return NULL; }
+
+// mixer (the real one is in audio.c)
+static uint8_t s_lv[STUDIO_MAX_MODULES] = {80, 80, 64, 80, 80, 80}, s_mute = 0x4;
+void studio_mix_set_level(int m, int p) { s_lv[m] = (uint8_t)p; }
+int studio_mix_level(int m) { return s_lv[m]; }
+void studio_mix_set_mute(int m, bool on) { s_mute = on ? s_mute | (1u << m) : s_mute & ~(1u << m); }
+bool studio_mix_muted(int m) { return s_mute & (1u << m); }
+float studio_mix_peak(int m) { return m == 1 ? 0.5f : (m == 0 ? 0.05f : 0); }

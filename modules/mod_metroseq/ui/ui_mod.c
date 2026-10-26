@@ -109,6 +109,7 @@ void mod_page_create(lv_obj_t *parent) {
         lv_obj_set_size(sl, SLIDER_W, MOD_SLIDER_H);
         lv_obj_set_pos(sl, slx, sy + 16);
         lv_slider_set_range(sl, -100, 100);   // bipolar; 0 = centre
+        lv_slider_set_mode(sl, LV_SLIDER_MODE_SYMMETRICAL);   // fills from the centre
         ui_style_bar_slider(sl, C_KNOB_MOD);
         lv_obj_add_event_cb(sl, slider_cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
         lv_obj_remove_flag(sl, LV_OBJ_FLAG_SCROLLABLE);

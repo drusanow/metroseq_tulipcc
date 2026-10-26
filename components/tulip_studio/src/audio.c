@@ -36,6 +36,9 @@ static const char *TAG = "audio";
 
 static i2s_chan_handle_t s_tx;
 static float s_l[B], s_r[B];
+static float s_ml[B], s_mr[B];   // one module's block, before its fader
+static volatile float s_mgain[STUDIO_MAX_MODULES];
+static volatile float s_peak[STUDIO_MAX_MODULES];
 static int16_t s_out[B * 2];
 static volatile int s_load_pct;
 static volatile uint32_t s_underruns;
@@ -58,6 +61,50 @@ void studio_set_volume(int v) {
 }
 
 int studio_volume(void) { return g_cfg.volume; }
+
+// fader: 0..100 %, a dB taper with STUDIO_MIX_UNITY = 0 dB and 0 = off
+static float mix_gain(int m) {
+    if (g_mix.mute & (1u << m)) return 0.0f;
+    int v = g_mix.level[m];
+    if (v <= 0) return 0.0f;
+    // -40 dB at 1 %, 0 dB at UNITY, +2 dB at 100 %
+    float db = v >= STUDIO_MIX_UNITY
+                   ? 2.0f * (v - STUDIO_MIX_UNITY) / (100 - STUDIO_MIX_UNITY)
+                   : -40.0f * (float)(STUDIO_MIX_UNITY - v) / (STUDIO_MIX_UNITY - 1);
+    return powf(10.0f, db / 20.0f);
+}
+
+static void mix_update(int m) { s_mgain[m] = mix_gain(m); }
+
+void studio_mix_set_level(int m, int pct) {
+    if (m < 0 || m >= STUDIO_MAX_MODULES) return;
+    pct = pct < 0 ? 0 : (pct > 100 ? 100 : pct);
+    if (g_mix.level[m] == pct) return;
+    g_mix.level[m] = (uint8_t)pct;
+    mix_update(m);
+    cfg_changed();
+}
+
+int studio_mix_level(int m) { return m >= 0 && m < STUDIO_MAX_MODULES ? g_mix.level[m] : 0; }
+
+void studio_mix_set_mute(int m, bool on) {
+    if (m < 0 || m >= STUDIO_MAX_MODULES) return;
+    if (on)
+        g_mix.mute |= (uint8_t)(1u << m);
+    else
+        g_mix.mute &= (uint8_t)~(1u << m);
+    mix_update(m);
+    cfg_changed();
+}
+
+bool studio_mix_muted(int m) { return m >= 0 && m < STUDIO_MAX_MODULES && (g_mix.mute & (1u << m)); }
+
+float studio_mix_peak(int m) {
+    if (m < 0 || m >= STUDIO_MAX_MODULES) return 0;
+    float p = s_peak[m];
+    s_peak[m] = 0;   // (a race with the audio task only loses one block's peak)
+    return p;
+}
 int studio_audio_load_pct(void) { return s_load_pct; }
 uint32_t studio_audio_underruns(void) { return s_underruns; }
 
@@ -116,7 +163,20 @@ static void audio_task(void *arg) {
         memset(s_r, 0, sizeof s_r);
         for (int i = 0; i < g_nmods; i++) {
             const tmod_t *m = g_mods[i];
-            if (g_enabled[i] && m->render) m->render(s_l, s_r, &blk);
+            if (!g_enabled[i] || !m->render) continue;
+            // each app renders on its own, then goes through its fader
+            memset(s_ml, 0, sizeof s_ml);
+            memset(s_mr, 0, sizeof s_mr);
+            m->render(s_ml, s_mr, &blk);
+            float mg = s_mgain[i], pk = s_peak[i];
+            for (int k = 0; k < B; k++) {
+                float a = s_ml[k] * mg, b = s_mr[k] * mg;
+                s_l[k] += a;
+                s_r[k] += b;
+                float x = fabsf(a) > fabsf(b) ? fabsf(a) : fabsf(b);
+                if (x > pk) pk = x;
+            }
+            s_peak[i] = pk;
         }
         float g = s_gain;
         for (int i = 0; i < B; i++) {
@@ -206,6 +266,7 @@ static void audio_boot(void *arg) {
 
 void audio_start(void) {
     s_gain = vol_gain(g_cfg.volume);
+    for (int m = 0; m < STUDIO_MAX_MODULES; m++) mix_update(m);
     if (xTaskCreatePinnedToCore(audio_boot, "audio", 8192, NULL, AUDIO_PRIO, NULL, AUDIO_CORE) !=
         pdPASS) {
         s_err = ESP_ERR_NO_MEM;

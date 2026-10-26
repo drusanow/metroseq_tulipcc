@@ -161,13 +161,13 @@ int main(void) {
     hx_tap(128 + 62 + 29, 21);                // SEQ
     hx_pump(100);
     hx_save("gintonix_3_seq");
-    hx_touch(150 + 5 * 54 + 20, 52 + 22 + 2 * 46 + 18, 1);   // add a trigger: held
+    hx_touch(150 + 5 * 54 + 20, 58 + 22 + 2 * 45 + 18, 1);   // add a trigger: held
     hx_pump(60);
-    hx_touch(150 + 5 * 54 + 20, 52 + 22 + 2 * 46 + 18, 0);
-    hx_tap(150 + 11 * 54 + 20, 44 + 9);         // LENGTH 12
+    hx_touch(150 + 5 * 54 + 20, 58 + 22 + 2 * 45 + 18, 0);
+    hx_tap(150 + 11 * 54 + 20, 58 + 9);         // LENGTH 12
     hx_pump(100);
     hx_save("gintonix_3b_seq_length");
-    hx_tap(150 + 15 * 54 + 20, 44 + 9);         // back to 16
+    hx_tap(150 + 15 * 54 + 20, 58 + 9);         // back to 16
     hx_tap(128 + 2 * 62 + 29, 21);            // MIDI
     preview_set_monitor("ch10 CC74 = 81");
     hx_pump(100);

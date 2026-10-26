@@ -12,6 +12,7 @@ with no MicroPython or AMY:
   * Switch between them with the blue square, as on the original Tulip.
   * Tags: metroseq (SEQUENCER, CV), GinTonix (DRUMS) and Sloe (SYNTH).
   * One tempo and transport, MIDI clock / Start / Stop for all of them.
+  * A mixer on the Studio home page: a level, mute and peak meter per app.
   * metroseq's tracks can play Sloe on the Tulip, or go out of MIDI OUT.
 * **metroseq**: a port of [`reference/metropolix_tulip.py`](reference/metropolix_tulip.py).
   It is a Metropolix-style two-track CV sequencer driving Makerfabs Mabee (GP8413) DACs,

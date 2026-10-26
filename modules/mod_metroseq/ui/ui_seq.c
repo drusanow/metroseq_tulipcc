@@ -172,7 +172,7 @@ void detail_popup_show(int stage) {
 void detail_popup_create(lv_obj_t *parent) {
     D.panel = ui_panel(parent, 0, 0, 560, 320, C_PANEL2, 10);
     lv_obj_align(D.panel, LV_ALIGN_CENTER, 0, 0);
-    D.title = ui_label(D.panel, "Stage", 20, 16);
+    D.title = ui_section(D.panel, "Stage", 20, 16);
     ui_btn(D.panel, "Close", 440, 100, 40, detail_close, 0, C_BTN, 12, NULL);
     static const char *rows[5] = {"Pulse count", "Gate type", "Ratchet", "Probability",
                                   "Accumulate"};
