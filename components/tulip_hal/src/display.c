@@ -30,7 +30,8 @@
 static const char *TAG = "disp";
 
 #define LVGL_STACK     12288
-#define BAND_ROWS      40          // 1024*40*2 = 80 KB render band
+#define BAND_ROWS      40          // 1024*40*2 = 80 KB render band, if it fits
+#define BAND_ROWS_MIN  8           // 16 KB: still a usable band
 #define FRAME_MS       10          // LVGL loop period cap
 
 static esp_lcd_panel_handle_t s_panel;
@@ -148,14 +149,36 @@ static uint32_t tick_cb(void) {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+// The render band wants internal RAM (fast to render into and to convert
+// from), but an app's static data can leave less than 80 KB in one piece:
+// halve the band until it fits, and only then fall back to PSRAM. Fewer
+// rows just means more, smaller flushes per redraw.
+static void *band_alloc(size_t *sz) {
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    ESP_LOGI(TAG, "render band: internal free %u, largest %u; PSRAM free %u, largest %u",
+             (unsigned)heap_caps_get_free_size(caps), (unsigned)heap_caps_get_largest_free_block(caps),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    for (int rows = BAND_ROWS; rows >= BAND_ROWS_MIN; rows /= 2) {
+        *sz = LCD_H_RES * rows * 2;   // RGB565
+        void *buf = heap_caps_malloc(*sz, caps);
+        ESP_LOGI(TAG, "render band: %d rows, %u bytes internal -> %p", rows, (unsigned)*sz, buf);
+        if (buf) return buf;
+    }
+    *sz = LCD_H_RES * BAND_ROWS * 2;
+    void *buf = heap_caps_malloc(*sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    ESP_LOGW(TAG, "render band: no internal RAM, %u bytes in PSRAM -> %p", (unsigned)*sz, buf);
+    return buf;
+}
+
 static void lvgl_task(void *arg) {
     panel_init();
     lv_init();
     lv_tick_set_cb(tick_cb);
     lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-    size_t sz = LCD_H_RES * BAND_ROWS * 2;
-    void *buf = heap_caps_malloc(sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t sz;
+    void *buf = band_alloc(&sz);
     assert(buf);
     lv_display_set_buffers(disp, buf, NULL, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
