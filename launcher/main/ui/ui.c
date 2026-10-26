@@ -122,6 +122,7 @@ static void install_overlay(void) {
         lv_obj_set_style_radius(U.inst_bar, 0, 0);
         lv_obj_set_style_radius(U.inst_bar, 0, LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(U.inst_bar, th_c(TH_LINE), 0);
+        lv_obj_set_style_bg_opa(U.inst_bar, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(U.inst_bar, th_c(TH_ORANGE), LV_PART_INDICATOR);
         U.inst_msg = th_text(U.inst, "", 212, 280, TH_FG, NULL);
         U.inst_ok = th_btn(U.inst, "OK", 212, 330, 140, 44, inst_ok_cb, NULL);

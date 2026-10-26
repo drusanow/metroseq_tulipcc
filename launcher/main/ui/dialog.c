@@ -44,7 +44,8 @@ static void open_box(const char *title, int h, int y) {
     dlg_close();
     D.veil = th_box(lv_layer_top(), 0, 0, SCR_W, SCR_H);
     lv_obj_set_style_bg_color(D.veil, th_c(TH_BG), 0);
-    lv_obj_set_style_bg_opa(D.veil, LV_OPA_80, 0);
+    // 50%: deeper dimming quantises orange to muddy red on the RGB332 panel
+    lv_obj_set_style_bg_opa(D.veil, LV_OPA_50, 0);
     lv_obj_add_flag(D.veil, LV_OBJ_FLAG_CLICKABLE);   // block the page below
     D.box = th_box(D.veil, (SCR_W - 620) / 2, y, 620, h);
     lv_obj_set_style_bg_opa(D.box, LV_OPA_COVER, 0);
@@ -97,4 +98,5 @@ void dlg_prompt(const char *title, const char *initial, const char *ok_label, bo
     lv_obj_set_size(D.kb, SCR_W, 300);
     lv_obj_align(D.kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(D.kb, D.ta);
+    th_style_keyboard(D.kb);
 }

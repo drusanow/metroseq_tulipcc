@@ -23,9 +23,6 @@ bool gt911_init(i2c_master_bus_handle_t bus, uint32_t scl_hz);
 // Returns false on I2C error.
 bool gt911_poll(int64_t now_us);
 
-// True once the controller has been found.
-bool gt911_ready(void);
-
 // Worst-case bus time of one gt911_poll() at the configured clock.
 int64_t gt911_poll_budget_us(void);
 

@@ -35,7 +35,7 @@ one of them.
 
 Taken from `tulip/esp32s3/pins.h` (MAKERFABS + TULIP4_R11), `boards/N32R8`,
 `esp32s3_display.c` and `gt911_touchscreen.c`. All of it is in
-`firmware/main/platform/board.h`.
+`components/tulip_hal/include/tulip/board.h`.
 
 * **MCU:** ESP32-S3 at 240 MHz, two cores, 32 MB octal flash, 8 MB octal PSRAM.
 * **Display:** 1024×600 RGB panel. It is wired for **8-bit RGB332** (B6 B7 G5 G6 G7 R5 R6

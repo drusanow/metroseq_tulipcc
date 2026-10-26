@@ -113,3 +113,23 @@ lv_obj_t *th_square(lv_obj_t *parent, const char *symbol, int x, int y, int w, i
     lv_obj_set_style_text_font(b, &lv_font_montserrat_20, 0);
     return b;
 }
+
+void th_style_keyboard(lv_obj_t *kb) {
+    lv_obj_set_style_bg_color(kb, th_c(TH_BG), 0);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(kb, 1, 0);
+    lv_obj_set_style_border_color(kb, th_c(TH_LINE), 0);
+    lv_obj_set_style_border_side(kb, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_bg_color(kb, th_c(TH_BG), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(kb, th_c(TH_LINE), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(kb, 2, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, th_c(TH_FG), LV_PART_ITEMS);
+    lv_obj_set_style_text_font(kb, &lv_font_montserrat_16, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, th_c(TH_ORANGE), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(kb, th_c(TH_WHITE), LV_PART_ITEMS | LV_STATE_PRESSED);
+    // function keys (shift, enter, ...) are "checked": orange label, not fill
+    lv_obj_set_style_bg_color(kb, th_c(TH_BG), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(kb, th_c(TH_ORANGE), LV_PART_ITEMS | LV_STATE_CHECKED);
+}

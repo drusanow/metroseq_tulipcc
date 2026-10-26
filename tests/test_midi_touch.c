@@ -6,7 +6,7 @@
 
 #include "midi_clock.h"
 #include "seq_engine.h"
-#include "touch_cal.h"
+#include "tulip/touch_cal.h"
 
 static int failures;
 #define CHECK(cond, ...)                                        \

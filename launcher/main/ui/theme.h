@@ -47,4 +47,8 @@ lv_obj_t *th_text(lv_obj_t *parent, const char *txt, int x, int y, uint8_t color
 lv_obj_t *th_box(lv_obj_t *parent, int x, int y, int w, int h);   // plain container
 lv_obj_t *th_hline(lv_obj_t *parent, int x, int y, int w);
 
+// Black keys with thin outlines, like the buttons (the default keyboard's
+// greys have no exact RGB332 match and come out olive).
+void th_style_keyboard(lv_obj_t *kb);
+
 void th_init(void);   // screen background + LVGL default theme colours

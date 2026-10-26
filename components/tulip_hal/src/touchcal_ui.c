@@ -21,7 +21,6 @@
 
 #include "lvgl.h"
 #include "tulip/board.h"
-#include "tulip/gt911.h"
 #include "tulip/settings.h"
 #include "tulip/touch.h"
 #include "tulip/touch_cal.h"

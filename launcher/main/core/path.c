@@ -1,4 +1,5 @@
 // path.c - see path.h.
+#define _POSIX_C_SOURCE 200809L   // strtok_r, strcasecmp on strict C11 hosts
 #include "path.h"
 
 #include <ctype.h>

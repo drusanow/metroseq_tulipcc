@@ -62,7 +62,7 @@ void console_page_create(lv_obj_t *p) {
     C.out = lv_textarea_create(p);
     lv_obj_set_pos(C.out, 16, 8);
     lv_obj_set_size(C.out, SCR_W - 32, 380);
-    lv_obj_set_style_text_font(C.out, &lv_font_unscii_16, 0);
+    lv_obj_set_style_text_font(C.out, &lv_font_montserrat_14, 0);
     lv_obj_set_style_bg_color(C.out, th_c(TH_BG), 0);
     lv_obj_set_style_border_color(C.out, th_c(TH_LINE), 0);
     lv_obj_set_style_border_width(C.out, 1, 0);
@@ -76,7 +76,7 @@ void console_page_create(lv_obj_t *p) {
     lv_obj_set_size(C.in, SCR_W - 32 - 128 - 12, 44);
     lv_textarea_set_one_line(C.in, true);
     lv_textarea_set_placeholder_text(C.in, "type a command (help)");
-    lv_obj_set_style_text_font(C.in, &lv_font_unscii_16, 0);
+    lv_obj_set_style_text_font(C.in, &lv_font_montserrat_14, 0);
     lv_obj_set_style_bg_color(C.in, th_c(TH_BG), 0);
     lv_obj_set_style_border_color(C.in, th_c(TH_ORANGE), 0);
     lv_obj_set_style_text_color(C.in, th_c(TH_WHITE), 0);
@@ -101,6 +101,7 @@ void console_page_create(lv_obj_t *p) {
     lv_obj_set_size(C.kb, SCR_W, 280);
     lv_obj_align(C.kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(C.kb, C.in);
+    th_style_keyboard(C.kb);
     lv_obj_add_flag(C.kb, LV_OBJ_FLAG_HIDDEN);
 }
 

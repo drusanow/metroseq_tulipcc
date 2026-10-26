@@ -1,11 +1,11 @@
 """Write build/lv_conf.h from LVGL's template with the same settings as
-firmware/sdkconfig.defaults (RGB565, CLIB malloc, Montserrat 16, dark theme)."""
+components/tulip_hal/sdkconfig.tulip (RGB565, CLIB malloc, Montserrat 16, dark theme)."""
 import os
 import re
 import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
-tmpl = os.path.join(here, "..", "..", "firmware", "components", "lvgl", "lv_conf_template.h")
+tmpl = os.path.join(here, "..", "..", "components", "lvgl", "lv_conf_template.h")
 src = open(tmpl).read()
 src = src.replace('#if 0 /*Set it to "1" to enable content*/', "#if 1", 1)
 SETTINGS = {
@@ -13,7 +13,12 @@ SETTINGS = {
     "LV_USE_STDLIB_MALLOC": "LV_STDLIB_CLIB",
     "LV_USE_STDLIB_STRING": "LV_STDLIB_CLIB",
     "LV_USE_STDLIB_SPRINTF": "LV_STDLIB_CLIB",
+    "LV_FONT_MONTSERRAT_12": "1",
+    "LV_FONT_MONTSERRAT_14": "1",
     "LV_FONT_MONTSERRAT_16": "1",
+    "LV_FONT_MONTSERRAT_20": "1",
+    "LV_FONT_MONTSERRAT_28": "1",
+    "LV_FONT_UNSCII_16": "1",
     "LV_FONT_DEFAULT": "&lv_font_montserrat_16",
     "LV_THEME_DEFAULT_DARK": "1",
     "LV_BUILD_EXAMPLES": "0",

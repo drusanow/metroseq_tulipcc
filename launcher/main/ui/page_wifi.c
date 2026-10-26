@@ -48,7 +48,7 @@ static void draw_list(void) {
         int bars = W.aps[i].rssi > -55 ? 4 : W.aps[i].rssi > -65 ? 3 : W.aps[i].rssi > -75 ? 2 : 1;
         static const char *const B[5] = {"", "|", "||", "|||", "||||"};
         char right[32];
-        snprintf(right, sizeof right, "%s  %-4s %d dBm", W.aps[i].secure ? LV_SYMBOL_EYE_CLOSE : " ",
+        snprintf(right, sizeof right, "%s   %-4s %d dBm", W.aps[i].secure ? "WPA" : "open",
                  B[bars], W.aps[i].rssi);
         lv_obj_t *rl = th_text(r, right, 0, 14, TH_DIM, &lv_font_montserrat_14);
         lv_obj_align(rl, LV_ALIGN_RIGHT_MID, -14, 0);

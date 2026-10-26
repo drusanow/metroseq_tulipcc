@@ -11,6 +11,9 @@ typedef struct {
     bool pressed;
 } touch_event_t;
 
+// True once the touch controller has been found.
+bool gt911_ready(void);
+
 // The controller's configured output range (raw coordinate maxima).
 void gt911_raw_max(int *x_max, int *y_max);
 

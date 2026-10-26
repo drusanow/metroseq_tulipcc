@@ -50,12 +50,12 @@
   .ico { display: inline-block; width: 22px; color: var(--dim); }
   .ico.dir { color: var(--orange); } .ico.app { color: var(--green); }
   .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-  .app { border: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
-  .app .n { color: var(--white); font-size: 18px; }
-  .app .v { color: var(--dim); font-size: 12px; }
-  .app .r { font-size: 11px; letter-spacing: .5px; }
-  .app .r.ready { color: var(--green); } .app .r.inst { color: var(--orange); }
-  .app button { margin-top: 6px; align-self: flex-start; }
+  .appcard { border: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .appcard .n { color: var(--white); font-size: 18px; }
+  .appcard .v { color: var(--dim); font-size: 12px; }
+  .appcard .r { font-size: 11px; letter-spacing: .5px; }
+  .appcard .r.ready { color: var(--green); } .appcard .r.inst { color: var(--orange); }
+  .appcard button { margin-top: 6px; align-self: flex-start; }
   .muted { color: var(--dim); }
   #drop { position: fixed; inset: 0; background: rgba(0,0,0,.85); border: 2px dashed var(--orange);
     display: none; align-items: center; justify-content: center; color: var(--orange);
@@ -182,7 +182,7 @@ async function loadInfo() {
   }
   for (const a of info.apps) {
     const d = document.createElement("div");
-    d.className = "app";
+    d.className = "appcard";
     d.innerHTML = '<div class="n"></div><div class="v"></div><div class="r"></div>';
     d.querySelector(".n").textContent = a.name;
     d.querySelector(".v").textContent = "v" + a.version + "  -  " + fmtSize(a.size) + "  -  " + a.path;
