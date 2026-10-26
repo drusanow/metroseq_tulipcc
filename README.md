@@ -24,6 +24,7 @@ with no MicroPython or AMY:
   * Native DSP, sample-accurate on the master clock.
   * Your Python kit and bank files load as they are.
 * **Sloe**: a small subtractive synth, the destination for routed sequencer tracks.
+  It is a page inside Studio, and also an app on its own, played from MIDI IN.
 * **hello**: the smallest standalone app, as a template.
 
 | Studio home | GinTonix |
@@ -42,6 +43,7 @@ launcher/              the launcher (factory app): UI, file browser, Wi-Fi, web 
 apps/studio/           metroseq + GinTonix + Sloe together, on one clock
 apps/metroseq/         metroseq on its own
 apps/gintonix/         GinTonix on its own
+apps/sloe/             Sloe on its own (a synth played from MIDI IN)
 apps/hello/            minimal standalone app template
 modules/               the Studio apps (each an ESP-IDF component)
   mod_metroseq/        the CV sequencer: engine/ (host-tested), platform/, ui/
@@ -64,7 +66,7 @@ reference/             the original MicroPython sketches
 
 ## Flash it
 
-**First time:** flash the full image over USB. It holds the launcher with **studio**,
+**First time:** flash the full image over USB. It holds the launcher with **studio**, **sloe**,
 **metroseq** and **gintonix** preloaded:
 
 ```sh
@@ -87,7 +89,7 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 3 apps)
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 4 apps)
 
 # develop an app:
 cd apps/studio && idf.py set-target esp32s3 && idf.py build

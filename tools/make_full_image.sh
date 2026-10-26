@@ -9,6 +9,7 @@
 #   0x350000   studio (metroseq + GinTonix + Sloe together), app slot ota_0
 #   0x650000   metroseq on its own, app slot ota_1
 #   0x950000   gintonix on its own, app slot ota_2
+#   0xC50000   sloe (the synth) on its own, app slot ota_3
 #              The launcher copies each one to /files/apps/<name>.bin on
 #              first boot, so they appear at once.
 #
@@ -18,7 +19,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/tulip-full.bin}"
 export IDF_COMPONENT_MANAGER=0
 
-for app in studio metroseq gintonix; do
+for app in studio metroseq gintonix sloe; do
     (cd "$ROOT/apps/$app" && idf.py build)
 done
 (cd "$ROOT/launcher" && idf.py build)
@@ -27,5 +28,6 @@ cd "$ROOT/launcher/build"
 python -m esptool --chip esp32s3 merge_bin -o "$OUT" @flash_args \
     0x350000 "$ROOT/apps/studio/build/studio.bin" \
     0x650000 "$ROOT/apps/metroseq/build/metroseq.bin" \
-    0x950000 "$ROOT/apps/gintonix/build/gintonix.bin"
+    0x950000 "$ROOT/apps/gintonix/build/gintonix.bin" \
+    0xC50000 "$ROOT/apps/sloe/build/sloe.bin"
 echo "wrote $OUT"

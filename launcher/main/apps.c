@@ -97,6 +97,16 @@ static uint32_t slot_image_len(const esp_partition_t *p) {
     return md.image_len;
 }
 
+// The slot's app in /files/apps isn't a short copy (one cut short by a power
+// off or crash before this check existed). A missing file is fine: the user
+// deleted it, and it stays deleted.
+static bool export_ok(const esp_app_desc_t *d, uint32_t size) {
+    char path[160];
+    snprintf(path, sizeof path, TULIP_APPS_DIR "/%s.bin", d->project_name);
+    struct stat st;
+    return stat(path, &st) != 0 || (uint32_t)st.st_size == size;
+}
+
 // A slot holds an app nobody knows about (preloaded at first flash, or the
 // table was lost): add it to the table and export it to /files/apps.
 static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d, int nth,
@@ -113,9 +123,14 @@ static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d,
 
     char path[160];
     snprintf(path, sizeof path, TULIP_APPS_DIR "/%s.bin", d->project_name);
+    // A copy cut short (power off, a crash) left a short file behind, which
+    // the launcher can't read as an app: only a complete one counts. The
+    // copy goes to a temporary name, renamed once it is all there.
     struct stat st;
-    if (stat(path, &st) == 0) return;   // already there
-    FILE *f = fopen(path, "wb");
+    if (stat(path, &st) == 0 && (uint32_t)st.st_size == len) return;   // already there
+    char tmp[168];
+    snprintf(tmp, sizeof tmp, "%s.part", path);
+    FILE *f = fopen(tmp, "wb");
     if (!f) return;
     static uint8_t buf[CHUNK];
     bool ok = true;
@@ -127,9 +142,11 @@ static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d,
         ok = esp_partition_read(p, off, buf, n) == ESP_OK && fwrite(buf, 1, n, f) == n;
         boot_status(NULL, msg, (int)((uint64_t)(off + n) * 100 / len));
     }
-    fclose(f);
-    if (!ok) {
-        unlink(path);
+    if (fclose(f) != 0) ok = false;
+    unlink(path);
+    if (!ok || rename(tmp, path) != 0) {
+        unlink(tmp);
+        ESP_LOGE(TAG, "could not copy %s to %s", d->project_name, path);
         return;
     }
     ESP_LOGI(TAG, "imported %s from slot %d to %s", d->project_name, i, path);
@@ -151,7 +168,8 @@ void apps_init(void) {
                 memset(s, 0, sizeof *s);
                 changed = true;
             }
-        } else if (!s->used || memcmp(s->elf_sha, desc[i].app_elf_sha256, 32) != 0) {
+        } else if (!s->used || memcmp(s->elf_sha, desc[i].app_elf_sha256, 32) != 0 ||
+                   !export_ok(&desc[i], s->size)) {
             adopt[i] = true;
             total++;
         }
