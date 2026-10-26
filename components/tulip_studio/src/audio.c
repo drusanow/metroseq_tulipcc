@@ -20,6 +20,7 @@
 #include "driver/i2s_std.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "studio_priv.h"
@@ -39,6 +40,9 @@ static int16_t s_out[B * 2];
 static volatile int s_load_pct;
 static volatile uint32_t s_underruns;
 static volatile float s_gain;
+static volatile uint32_t s_blocks;    // blocks handed to the DAC so far
+static volatile esp_err_t s_err;      // why audio couldn't start, if it couldn't
+static const char *s_err_at = "";
 
 static float vol_gain(int v) {
     if (v <= 0) return 0.0f;
@@ -56,6 +60,29 @@ void studio_set_volume(int v) {
 int studio_volume(void) { return g_cfg.volume; }
 int studio_audio_load_pct(void) { return s_load_pct; }
 uint32_t studio_audio_underruns(void) { return s_underruns; }
+
+// Shown on screen: no sound is otherwise a silent failure. NULL = all well.
+const char *studio_audio_problem(void) {
+    static char b[64];
+    static uint32_t last_blocks;
+    static int64_t last_change;
+    if (s_err != ESP_OK) {
+        snprintf(b, sizeof b, "AUDIO OFF: %s %s", s_err_at, esp_err_to_name(s_err));
+        return b;
+    }
+    int64_t now = esp_timer_get_time();
+    uint32_t n = s_blocks;
+    if (n != last_blocks || !last_change) {
+        last_blocks = n;
+        last_change = now;
+        return NULL;
+    }
+    if (now - last_change > 500000) {   // ~450 blocks should have gone by
+        snprintf(b, sizeof b, "AUDIO STALLED (%u blocks)", (unsigned)n);
+        return b;
+    }
+    return NULL;
+}
 
 static bool IRAM_ATTR on_ovf(i2s_chan_handle_t h, i2s_event_data_t *e, void *ctx) {
     s_underruns++;
@@ -101,9 +128,17 @@ static void audio_task(void *arg) {
         s_load_pct = (int)(load + 0.5f);
 
         size_t written;
-        i2s_channel_write(s_tx, s_out, sizeof s_out, &written, portMAX_DELAY);
+        esp_err_t e = i2s_channel_write(s_tx, s_out, sizeof s_out, &written, pdMS_TO_TICKS(100));
+        if (e != ESP_OK) {
+            // the DAC isn't taking data: say so, and don't spin on it
+            static uint32_t nerr;
+            if (nerr++ % 50 == 0) ESP_LOGE(TAG, "I2S write: %s", esp_err_to_name(e));
+            vTaskDelay(1);
+            continue;
+        }
         int64_t tw = studio_now_us();
         frame += B;
+        s_blocks++;
 
         // when the next block (frame) will be heard, measured vs predicted
         int64_t measured = tw + DESC * B * 1000000LL / STUDIO_SR;
@@ -127,16 +162,14 @@ static void audio_task(void *arg) {
     }
 }
 
-void audio_start(void) {
-    s_gain = vol_gain(g_cfg.volume);
+static esp_err_t i2s_init(void) {
     i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     cc.dma_desc_num = DESC;
     cc.dma_frame_num = B;
     cc.auto_clear = true;   // an underrun plays silence, not a stuck buffer
-    if (i2s_new_channel(&cc, &s_tx, NULL) != ESP_OK) {
-        ESP_LOGE(TAG, "no I2S channel");
-        return;
-    }
+    esp_err_t e;
+    s_err_at = "channel";
+    if ((e = i2s_new_channel(&cc, &s_tx, NULL)) != ESP_OK) return e;
     i2s_std_config_t sc = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(STUDIO_SR),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
@@ -149,13 +182,34 @@ void audio_start(void) {
             .din = I2S_GPIO_UNUSED,
         },
     };
-    if (i2s_channel_init_std_mode(s_tx, &sc) != ESP_OK) {
-        ESP_LOGE(TAG, "I2S init failed");
-        return;
-    }
+    s_err_at = "std mode";
+    if ((e = i2s_channel_init_std_mode(s_tx, &sc)) != ESP_OK) return e;
     i2s_event_callbacks_t cbs = {.on_send_q_ovf = on_ovf};
     i2s_channel_register_event_callback(s_tx, &cbs, NULL);
-    i2s_channel_enable(s_tx);
-    xTaskCreatePinnedToCore(audio_task, "audio", 8192, NULL, AUDIO_PRIO, NULL, AUDIO_CORE);
-    ESP_LOGI(TAG, "%d Hz, %d x %d frames", STUDIO_SR, DESC, B);
+    s_err_at = "enable";
+    return i2s_channel_enable(s_tx);
+}
+
+// I2S is set up from the audio task itself, so its interrupt is on core 1
+// with the rest of the audio, away from the panel's on core 0.
+static void audio_boot(void *arg) {
+    esp_err_t e = i2s_init();
+    if (e != ESP_OK) {
+        s_err = e;
+        ESP_LOGE(TAG, "I2S %s failed: %s - no audio", s_err_at, esp_err_to_name(e));
+        vTaskDelete(NULL);
+    }
+    ESP_LOGI(TAG, "%d Hz, %d x %d frames, BCLK %d WS %d DOUT %d, volume %d", STUDIO_SR, DESC, B,
+             PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT, g_cfg.volume);
+    audio_task(arg);
+}
+
+void audio_start(void) {
+    s_gain = vol_gain(g_cfg.volume);
+    if (xTaskCreatePinnedToCore(audio_boot, "audio", 8192, NULL, AUDIO_PRIO, NULL, AUDIO_CORE) !=
+        pdPASS) {
+        s_err = ESP_ERR_NO_MEM;
+        s_err_at = "task";
+        ESP_LOGE(TAG, "no memory for the audio task - no audio");
+    }
 }

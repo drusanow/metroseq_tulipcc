@@ -19,3 +19,9 @@ void tulip_exit_to_launcher(void);
 
 // True when this image is running from an app slot (i.e. under the launcher).
 bool tulip_under_launcher(void);
+
+// True on a real start (power on, reset button, after flashing); false
+// when the board restarted itself: back from an app, a software restart,
+// a crash. The launcher's power-on extras (calibration prompt, autostart)
+// only happen on a real start.
+bool tulip_cold_start(void);

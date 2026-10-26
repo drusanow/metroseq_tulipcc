@@ -51,6 +51,7 @@ bool web_start(void) { return true; }
 void web_stop(void) {}
 
 install_status_t g_install;
+bool tulip_cold_start(void) { return true; }
 boot_status_t g_boot = {.pct = -1};
 void boot_status(const char *title, const char *msg, int pct) {
     snprintf(g_boot.title, sizeof g_boot.title, "%s", title);

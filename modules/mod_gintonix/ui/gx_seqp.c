@@ -79,7 +79,7 @@ void seq_page_create(lv_obj_t *g) {
     for (int i = 0; i < GX_NSTEP; i++) {
         lv_obj_t *led = Q.leds[i] = sw_box(g, X0 + i * SW, 4, SW - 8, 10, STEP_OUT, 0);
         lv_obj_add_flag(led, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_ext_click_area(led, 6);
+        lv_obj_set_ext_click_area(led, 3);   // not reaching into row 1
         lv_obj_add_event_cb(led, set_len, LV_EVENT_PRESSED, (void *)(intptr_t)i);
     }
     for (int c = 0; c < GX_NCH; c++) {

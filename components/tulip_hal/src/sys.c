@@ -37,3 +37,17 @@ void tulip_exit_to_launcher(void) {
     boot_launcher_next();
     esp_restart();
 }
+
+bool tulip_cold_start(void) {
+    switch (esp_reset_reason()) {
+    case ESP_RST_SW:
+    case ESP_RST_PANIC:
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:
+    case ESP_RST_DEEPSLEEP:
+        return false;
+    default:
+        return true;
+    }
+}

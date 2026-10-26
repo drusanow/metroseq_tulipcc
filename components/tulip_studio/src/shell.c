@@ -423,9 +423,14 @@ static void home_poll(void) {
     int64_t now = studio_now_us();
     if (now > next) {
         next = now + 500000;
-        char t[48];
-        snprintf(t, sizeof t, "AUDIO %d%%   XRUN %u", studio_audio_load_pct(),
-                 (unsigned)studio_audio_underruns());
+        char t[72];
+        const char *bad = studio_audio_problem();
+        if (bad)
+            snprintf(t, sizeof t, "%s", bad);
+        else
+            snprintf(t, sizeof t, "AUDIO %d%%   XRUN %u", studio_audio_load_pct(),
+                     (unsigned)studio_audio_underruns());
+        lv_obj_set_style_text_color(H.cpu, sw_c(bad ? SW_RED : SW_DIM), 0);
         lv_label_set_text(H.cpu, t);
     }
     char mon[40];
@@ -455,7 +460,33 @@ void shell_ui_create(void) {
     if (boot != lv_screen_active()) lv_obj_delete(boot);
 }
 
+// No sound would otherwise fail silently: on every page, a red line at the
+// bottom says why while audio is down.
+static void audio_banner(void) {
+    static lv_obj_t *lbl;
+    static int64_t next;
+    int64_t now = studio_now_us();
+    if (now < next) return;
+    next = now + 500000;
+    const char *bad = studio_audio_problem();
+    if (!bad) {
+        if (lbl) lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    if (!lbl) {
+        lbl = lv_label_create(lv_layer_top());
+        lv_obj_set_style_bg_color(lbl, sw_c(SW_RED), 0);
+        lv_obj_set_style_bg_opa(lbl, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(lbl, sw_c(0xffffff), 0);
+        lv_obj_set_style_pad_hor(lbl, 8, 0);
+        lv_obj_align(lbl, LV_ALIGN_BOTTOM_MID, 0, -4);
+    }
+    lv_label_set_text(lbl, bad);
+    lv_obj_remove_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+}
+
 void shell_ui_poll(void) {
+    audio_banner();
     for (int i = 0; i < g_nmods; i++)
         if (s_scr[i] && g_mods[i]->ui_poll) g_mods[i]->ui_poll(s_cur == i);
     if (s_cur == -1) home_poll();

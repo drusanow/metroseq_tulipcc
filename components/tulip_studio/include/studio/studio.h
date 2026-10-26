@@ -209,6 +209,7 @@ void studio_set_volume(int v);    // 0..10
 int studio_volume(void);
 int studio_audio_load_pct(void);  // render time / real time
 uint32_t studio_audio_underruns(void);
+const char *studio_audio_problem(void);   // NULL, or why there's no sound
 
 // --- UI -------------------------------------------------------------------------------------
 

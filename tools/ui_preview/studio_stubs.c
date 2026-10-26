@@ -112,3 +112,4 @@ void studio_set_volume(int v) { g_cfg.volume = (uint8_t)v; }
 int studio_volume(void) { return g_cfg.volume; }
 int studio_audio_load_pct(void) { return 23; }
 uint32_t studio_audio_underruns(void) { return 0; }
+const char *studio_audio_problem(void) { return NULL; }

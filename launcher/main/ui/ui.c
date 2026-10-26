@@ -10,6 +10,7 @@
 #include "sysinfo.h"
 #include "theme.h"
 #include "tulip/settings.h"
+#include "tulip/sys.h"
 #include "tulip/touchcal_ui.h"
 #include "web.h"
 #include "wifi.h"
@@ -250,6 +251,8 @@ static void build(void) {
     console_page_create(U.pages[PG_CONSOLE]);
     ui_show_page(PG_HOME);
     tulip_touchcal_set_notify(ui_toast);
+    // only on a real power-on: not when coming back from an app
+    if (!tulip_cold_start()) return;
     if (g_tulip.cal_prompt)
         tulip_touchcal_boot_prompt(after_cal);
     else

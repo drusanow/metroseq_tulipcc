@@ -121,7 +121,7 @@
 #define ACC_C      0xffdb00
 #define FILL_C     0xff6dff
 #define STEP_OFF   0x242424
-#define STEP_OUT   0x000024
+#define STEP_OUT   0x00246d   // past LENGTH: must not turn black on the RGB332 panel
 #define STEP_DIM   0x244955
 #define LED_ON     0xff2400
 #define LED_OFF    0x490000
