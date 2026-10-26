@@ -37,6 +37,19 @@ typedef struct {
 
 extern install_status_t g_install;
 
+// Start-up progress, shown by the UI while the launcher gets ready (the
+// first start after flashing formats /files and copies the preloaded apps
+// in, which takes a while).
+typedef struct {
+    volatile bool done;
+    volatile int pct;      // -1: no bar
+    char title[48];
+    char msg[96];
+} boot_status_t;
+
+extern boot_status_t g_boot;
+void boot_status(const char *title, const char *msg, int pct);
+
 // Load the slot table and reconcile it with what the slots really hold.
 // If a slot holds an app that isn't in /files/apps (e.g. preloaded with
 // the first flash), copy it there so it shows up.

@@ -193,8 +193,50 @@ static void autostart_poll(void) {
 
 // --- entry points --------------------------------------------------------------
 
-void ui_create(void) {
-    th_init();
+// The screen comes up before /files and the apps are ready (see main.c): until
+// g_boot.done it shows their progress, then the launcher is built.
+static struct {
+    lv_obj_t *box, *title, *bar, *msg;
+    int pct;
+} B = {.pct = -2};
+
+static void boot_create(void) {
+    B.box = th_box(lv_screen_active(), 0, 0, SCR_W, SCR_H);
+    lv_obj_t *t = th_text(B.box, "TULIP", 212, 140, TH_FG, &lv_font_montserrat_28);
+    lv_obj_set_style_text_letter_space(t, 3, 0);
+    B.title = th_title(B.box, "", 212, 200, TH_ORANGE);
+    B.bar = lv_bar_create(B.box);
+    lv_obj_set_pos(B.bar, 212, 250);
+    lv_obj_set_size(B.bar, 600, 14);
+    lv_obj_set_style_radius(B.bar, 0, 0);
+    lv_obj_set_style_radius(B.bar, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(B.bar, th_c(TH_LINE), 0);
+    lv_obj_set_style_bg_opa(B.bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(B.bar, th_c(TH_ORANGE), LV_PART_INDICATOR);
+    B.msg = th_text(B.box, "", 212, 280, TH_FG, NULL);
+    lv_obj_set_width(B.msg, 600);
+    lv_label_set_long_mode(B.msg, LV_LABEL_LONG_WRAP);
+}
+
+static void boot_poll(void) {
+    char b[sizeof g_boot.msg];
+    snprintf(b, sizeof b, "%s", g_boot.title);
+    if (strcmp(b, lv_label_get_text(B.title))) lv_label_set_text(B.title, b);
+    snprintf(b, sizeof b, "%s", g_boot.msg);
+    if (strcmp(b, lv_label_get_text(B.msg))) lv_label_set_text(B.msg, b);
+    int pct = g_boot.pct;
+    if (pct != B.pct) {
+        B.pct = pct;
+        if (pct < 0) {
+            lv_obj_add_flag(B.bar, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(B.bar, LV_OBJ_FLAG_HIDDEN);
+            lv_bar_set_value(B.bar, pct, LV_ANIM_OFF);
+        }
+    }
+}
+
+static void build(void) {
     lv_obj_t *scr = lv_screen_active();
     top_bar(scr);
     for (int i = 0; i < PG_COUNT; i++) {
@@ -214,8 +256,23 @@ void ui_create(void) {
         after_cal();
 }
 
+void ui_create(void) {
+    th_init();
+    boot_create();
+    boot_poll();
+}
+
 void ui_poll(void) {
     static uint32_t last;
+    if (B.box) {
+        if (!g_boot.done) {
+            boot_poll();
+            return;
+        }
+        lv_obj_delete(B.box);
+        B.box = NULL;
+        build();
+    }
     tulip_touchcal_poll();
     install_overlay();
     autostart_poll();

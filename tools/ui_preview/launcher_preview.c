@@ -51,6 +51,12 @@ bool web_start(void) { return true; }
 void web_stop(void) {}
 
 install_status_t g_install;
+boot_status_t g_boot = {.pct = -1};
+void boot_status(const char *title, const char *msg, int pct) {
+    snprintf(g_boot.title, sizeof g_boot.title, "%s", title);
+    snprintf(g_boot.msg, sizeof g_boot.msg, "%s", msg);
+    g_boot.pct = pct;
+}
 typedef struct {
     const char *file, *name, *ver;
     uint32_t size;
@@ -177,6 +183,10 @@ int main(void) {
     hx_init();
     hx_poll = ui_poll;
     ui_create();
+    boot_status("SETTING UP APPS", "copying studio into /files/apps (1 of 3)", 40);
+    hx_pump(200);
+    hx_save("launcher_00_first_start");
+    g_boot.done = true;
     hx_pump(1200);
     hx_save("launcher_0_cal_prompt");
     hx_tap(800, 300);   // right half: keep the saved calibration

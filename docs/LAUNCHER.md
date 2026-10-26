@@ -179,6 +179,7 @@ Flash `tulip-full.bin` once over USB (`esptool.py --chip esp32s3 write_flash 0x0
 tulip-full.bin`). It contains the bootloader, the partition table, the launcher, and
 **studio, metroseq and gintonix preloaded** in slots 1–3. On first boot the launcher
 formats `/files`, then copies them into `/files/apps`, so they show up straight away.
+This takes up to a minute; the screen shows its progress.
 After that, apps only ever arrive over Wi-Fi or USB serial.
 
 > This replaces the Tulip firmware *and* its `/user` filesystem region. Back up your

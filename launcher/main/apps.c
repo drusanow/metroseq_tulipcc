@@ -35,6 +35,13 @@ typedef struct {
 } slot_table_t;
 
 install_status_t g_install;
+boot_status_t g_boot = {.pct = -1};
+
+void boot_status(const char *title, const char *msg, int pct) {
+    if (title) snprintf(g_boot.title, sizeof g_boot.title, "%s", title);
+    if (msg) snprintf(g_boot.msg, sizeof g_boot.msg, "%s", msg);
+    g_boot.pct = pct;
+}
 static slot_table_t s_tab;
 static SemaphoreHandle_t s_mx;
 static char s_launch_path[192];
@@ -92,7 +99,8 @@ static uint32_t slot_image_len(const esp_partition_t *p) {
 
 // A slot holds an app nobody knows about (preloaded at first flash, or the
 // table was lost): add it to the table and export it to /files/apps.
-static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d) {
+static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d, int nth,
+                       int total) {
     uint32_t len = slot_image_len(p);
     if (!len) return;
     app_slot_t *s = &s_tab.s[i];
@@ -111,9 +119,13 @@ static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d)
     if (!f) return;
     static uint8_t buf[CHUNK];
     bool ok = true;
+    char msg[96];
+    snprintf(msg, sizeof msg, "copying %s into /files/apps  (%d of %d)", d->project_name, nth,
+             total);
     for (uint32_t off = 0; ok && off < len; off += CHUNK) {
         uint32_t n = len - off < CHUNK ? len - off : CHUNK;
         ok = esp_partition_read(p, off, buf, n) == ESP_OK && fwrite(buf, 1, n, f) == n;
+        boot_status(NULL, msg, (int)((uint64_t)(off + n) * 100 / len));
     }
     fclose(f);
     if (!ok) {
@@ -127,20 +139,28 @@ void apps_init(void) {
     s_mx = xSemaphoreCreateMutex();
     table_load();
     bool changed = false;
+    bool adopt[APP_SLOTS] = {0};
+    esp_app_desc_t desc[APP_SLOTS];
+    int total = 0;
     for (int i = 0; i < APP_SLOTS; i++) {
         const esp_partition_t *p = slot_part(i);
-        esp_app_desc_t d;
-        bool has = p && esp_ota_get_partition_description(p, &d) == ESP_OK;
+        bool has = p && esp_ota_get_partition_description(p, &desc[i]) == ESP_OK;
         app_slot_t *s = &s_tab.s[i];
         if (!has) {
             if (s->used) {
                 memset(s, 0, sizeof *s);
                 changed = true;
             }
-        } else if (!s->used || memcmp(s->elf_sha, d.app_elf_sha256, 32) != 0) {
-            adopt_slot(i, p, &d);
-            changed = true;
+        } else if (!s->used || memcmp(s->elf_sha, desc[i].app_elf_sha256, 32) != 0) {
+            adopt[i] = true;
+            total++;
         }
+    }
+    if (total) boot_status("SETTING UP APPS", "checking the app slots", 0);
+    for (int i = 0, nth = 0; i < APP_SLOTS; i++) {
+        if (!adopt[i]) continue;
+        adopt_slot(i, slot_part(i), &desc[i], ++nth, total);
+        changed = true;
     }
     if (changed) table_save();
 }
