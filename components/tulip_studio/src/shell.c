@@ -674,9 +674,8 @@ void shell_ui_create(void) {
     // handling runs in its UI poll, shown or not); closed ones when opened
     for (int i = 0; i < g_nmods; i++)
         if (g_enabled[i]) build(i);
-    int first = studio_multi() ? g_cfg.shown : 0;
-    if (first >= g_nmods || (first >= 0 && !g_enabled[first])) first = studio_multi() ? -1 : 0;
-    show(first);
+    // Studio always opens on its home page; a single app on its own screen
+    show(studio_multi() ? -1 : 0);
     if (boot != lv_screen_active()) lv_obj_delete(boot);
 }
 

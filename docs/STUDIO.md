@@ -58,8 +58,8 @@ From the launcher, tap **studio**.
   * the last MIDI message received;
   * **TOUCH CAL**.
 
-Everything here (tempo, clock, routes, open apps, the last screen shown) is saved and
-comes back the next time you open Studio.
+Everything here (tempo, clock, routes, open apps) is saved and comes back the next time
+you open Studio, which always starts on this home page.
 
 ### Studio patches
 
