@@ -60,3 +60,7 @@ CONFIG_LV_BUILD_EXAMPLES=n
 # channel object in PSRAM and i2s_channel_init_std_mode() fails with
 # ESP_ERR_INVALID_ARG: no audio at all.
 CONFIG_I2S_ISR_IRAM_SAFE=y
+
+# app_main does real work at start-up (the launcher's first-start storage
+# set-up, the apps' modules loading their files): 8 KB, not the default 3.5
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

@@ -156,8 +156,10 @@ void apps_init(void) {
     s_mx = xSemaphoreCreateMutex();
     table_load();
     bool changed = false;
-    bool adopt[APP_SLOTS] = {0};
-    esp_app_desc_t desc[APP_SLOTS];
+    // static: 6 x 256 bytes would overflow app_main's stack
+    static bool adopt[APP_SLOTS];
+    static esp_app_desc_t desc[APP_SLOTS];
+    memset(adopt, 0, sizeof adopt);
     int total = 0;
     for (int i = 0; i < APP_SLOTS; i++) {
         const esp_partition_t *p = slot_part(i);
