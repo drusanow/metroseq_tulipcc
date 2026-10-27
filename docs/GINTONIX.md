@@ -75,6 +75,12 @@ loads:
 
 The kits are also looked for in `/files/gintonic/kits`, as the Python did.
 
+**Saving projects.** **SAVE...** in the header saves the whole project (the 8 sounds, A
+and B for morph, and the 12 patterns with their chains, accents and fills) to a bank slot,
+`gintonic_bank/NNN.json`. Before this update the apps' `/files` only knew 8.3 file names,
+so `gintonic_bank` and `gintonic_settings.json` couldn't be created and saves failed. They
+work now. A Studio patch also carries the current kit and patterns.
+
 ## What's different, and why
 
 | | Python (AMY) | C |

@@ -332,6 +332,12 @@ void wt_ui_show(bool shown) {
     if (shown) wb_refresh();
 }
 
+void wt_ui_reload(void) {
+    if (!wt_scr) return;
+    wb_refresh();
+    wt_header_refresh();
+}
+
 void wt_ui_poll(bool visible) {
     static uint32_t last;
     wt_cc_t m;

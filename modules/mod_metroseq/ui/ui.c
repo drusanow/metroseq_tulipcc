@@ -152,6 +152,7 @@ void ui_refresh_all(void) {
 void ui_refresh_notes(void) { seq_page_refresh_notes(); }
 
 void ui_poll(bool visible) {
+    preset_poll();          // the current preset keeps every change
     if (!visible) return;   // still playing; nothing to draw
     bool playing = g_status.playing;
     studio_clock_status_t st;
@@ -183,7 +184,11 @@ void ui_poll(bool visible) {
     if (H.page == 3) set_page_poll();
 }
 
+static bool s_built;
+bool ui_built(void) { return s_built; }
+
 void ui_create(lv_obj_t *scr) {
+    s_built = true;
     lv_obj_set_style_bg_color(scr, c332(C_BG), 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     header_create(scr);

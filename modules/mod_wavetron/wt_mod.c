@@ -488,6 +488,31 @@ static void ui_poll(bool visible) {
 
 static bool busy(void) { return s_dirty; }
 
+// --- Studio patches: the sound (tables by path), its name, the MIDI channel --------------------
+
+static cJSON *patch_save(void) {
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "patch", g_patch_name);
+    cJSON_AddNumberToObject(o, "midi_ch", (int)g_wt.s.p[WP_MCH]);
+    cJSON_AddItemToObject(o, "rec", wt_patch_to_json(&g_wt));
+    return o;
+}
+
+static void patch_load(const cJSON *o) {
+    const cJSON *rec = cJSON_GetObjectItem(o, "rec");
+    if (!cJSON_IsObject(rec)) return;
+    const cJSON *ch = cJSON_GetObjectItem(o, "midi_ch");
+    if (cJSON_IsNumber(ch)) g_wt.s.p[WP_MCH] = wt_param_fix(WP_MCH, (float)ch->valuedouble);
+    bool missing;
+    apply_rec(rec, &missing);
+    const cJSON *nm = cJSON_GetObjectItem(o, "patch");
+    snprintf(g_patch_name, sizeof g_patch_name, "%s", cJSON_IsString(nm) ? nm->valuestring : "");
+    if (missing) snprintf(wt_last_msg, sizeof wt_last_msg, "a wavetable is missing");
+    wt_replaced();
+    mark_dirty();
+    wt_ui_reload();
+}
+
 static void midi_desc(char *b, int n) {
     snprintf(b, n, "notes on ch %d, bend; CC1 position, CC74 cutoff, CC71 reso, CC76 detune",
              (int)g_wt.s.p[WP_MCH]);
@@ -509,4 +534,6 @@ tmod_t mod_wavetron = {
     .ui_poll = ui_poll,
     .ui_show = wt_ui_show,
     .busy = busy,
+    .patch_save = patch_save,
+    .patch_load = patch_load,
 };

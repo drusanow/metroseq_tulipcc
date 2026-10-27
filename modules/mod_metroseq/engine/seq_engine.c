@@ -317,11 +317,51 @@ static int next_stage_index(seq_engine_t *e, int t) {
     return -1;
 }
 
-static void mod_tick(seq_engine_t *e, int l) {
+// The stage track t enters next from (cur, pdir), for the orders that
+// don't roll dice (so the engine isn't touched).
+static int peek_stage(const seq_engine_t *e, int t, int cur, int8_t pdir) {
+    const track_cfg_t *cfg = &e->pat->tracks[t];
+    int L = cfg->length;
+    for (int guard = 0; guard < L + 1; guard++) {
+        int nxt = cur < 0 ? (cfg->order == ORD_REV ? L - 1 : 0)
+                          : next_order_index((seq_engine_t *)e, cfg->order, L, cur, &pdir);
+        cur = nxt;
+        if (!e->pat->stages[nxt].skip) return nxt;
+    }
+    return -1;
+}
+
+bool seq_engine_top_next(const seq_engine_t *e) {
+    if (!e->playing) return true;
+    uint32_t n = e->clk + 1;   // the next master pulse
+    bool bar = n % MASTER_DIV == 0;
+    const track_cfg_t *cfg = &e->pat->tracks[0];
+    const track_rt_t *tr = &e->tr[0];
+    if (cfg->order == ORD_RAND || cfg->order == ORD_BROWN) return bar;
+    int start = peek_stage(e, 0, -1, 1);
+    if (start < 0) return bar;
+    // TRK 1 doesn't move on that pulse, or is still inside a stage
+    if (n < tr->next16 || tr->pulse_left > 0) return false;
+    return peek_stage(e, 0, tr->cur_stage, tr->pdir) == start;
+}
+
+// A lane with a MIDI CC sends its stage's value when it changes (and on
+// PLAY, so the receiver starts in step).
+static void lane_cc(seq_engine_t *e, int l, int64_t now, seq_actions_t *out, bool force) {
+    if (!e->pat->lane_cc[l]) return;
+    int st = clampi(e->ln[l].cur_stage, 0, NUM_STAGES - 1);
+    int v = lane_cc_value(e->pat->mods[l].values[st]);
+    if (!force && v == e->ln[l].last_cc) return;
+    e->ln[l].last_cc = (int16_t)v;
+    emit(out, now, ACT_CC, (uint8_t)l, v);
+}
+
+static void mod_tick(seq_engine_t *e, int l, int64_t now, seq_actions_t *out) {
     const mod_lane_cfg_t *m = &e->pat->mods[l];
     lane_rt_t *ln = &e->ln[l];
     ln->cur_stage = next_order_index(e, m->order, m->length, ln->cur_stage, &ln->pdir);
     ln->disp_stage = ln->cur_stage;
+    lane_cc(e, l, now, out, false);
 }
 
 // --- per-track pulse handling (Python _stage_enter / _fire_pulse) ---------
@@ -364,9 +404,10 @@ static void stage_enter(seq_engine_t *e, int t, int64_t now, seq_actions_t *out)
 
     tr->accum_run = clampi(tr->accum_run + st->accum, -10000, 10000);
 
-    // slider -> invert -> pitch mod -> quantise -> transpose/octave/accum
-    int semi = st->pitch;
-    if (cfg->invert) semi = PITCH_RANGE - semi;
+    // slider -> invert -> RANGE -> pitch mod -> quantise -> transpose/octave/accum
+    int pos = st->pitch;
+    if (cfg->invert) pos = PITCH_STEPS - pos;
+    int semi = stage_semi(e->pat, pos);
     semi += seq_mod_offset(e, t, MP_PITCH, 12);
     if (semi < 0) semi = 0;
     semi = quantise(semi, &SCALES[e->pat->scale_idx], e->pat->root);
@@ -451,7 +492,7 @@ static void master_pulse(seq_engine_t *e, int64_t now, seq_actions_t *out) {
     for (int l = 0; l < NUM_MOD_LANES; l++) {
         if (e->clk >= e->ln[l].next16) {
             e->ln[l].next16 = e->clk + DIV_VALUES[e->pat->mods[l].div_i];
-            mod_tick(e, l);
+            mod_tick(e, l, now, out);
         }
     }
     for (int t = 0; t < NUM_TRACKS; t++) {
@@ -504,6 +545,7 @@ void seq_engine_start(seq_engine_t *e, int64_t now, seq_actions_t *out) {
         e->ln[l].pdir = 1;
         e->ln[l].disp_stage = 0;
         e->ln[l].next16 = DIV_VALUES[e->pat->mods[l].div_i];
+        lane_cc(e, l, now, out, true);
     }
     for (int t = 0; t < NUM_TRACKS; t++) track_reset_play(&e->tr[t]);
     // sound stage 0 on both tracks now so the downbeat isn't late

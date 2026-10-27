@@ -60,4 +60,5 @@ bool wt_midi_next(wt_cc_t *m);
 void wt_ui_create(lv_obj_t *scr);
 void wt_ui_poll(bool visible);
 void wt_ui_show(bool shown);
+void wt_ui_reload(void);        // a whole new sound: redraw (if the screen is built)
 void wt_ui_toast(const char *msg);

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "seq_engine.h"
+#include "seq_json.h"
 
 static int failures;
 #define CHECK(cond, ...)                                              \
@@ -330,6 +331,13 @@ static void random_edit(pattern_t *p) {
     switch (fr(12)) {
     case 0: p->bpm = MIN_BPM + fr(MAX_BPM - MIN_BPM + 1); break;
     case 1: p->merge_cv = !p->merge_cv; break;
+    case 3: p->range_oct = MIN_RANGE_OCT + fr(MAX_RANGE_OCT); break;
+    case 4: {
+        int l = fr(NUM_MOD_LANES);
+        p->lane_cc[l] = fr(2) ? 1 + fr(127) : 0;
+        p->lane_cc_ch[l] = 1 + fr(16);
+        break;
+    }
     case 2:
         p->root = fr(12);
         p->scale_idx = fr(NUM_SCALES);
@@ -339,7 +347,7 @@ static void random_edit(pattern_t *p) {
         stage_t *s = &p->stages[fr(NUM_STAGES)];
         track_cfg_t *t = &p->tracks[fr(NUM_TRACKS)];
         mod_lane_cfg_t *m = &p->mods[fr(NUM_MOD_LANES)];
-        s->pitch = fr(PITCH_RANGE + 1); s->pulses = 1 + fr(8); s->gate = fr(GATE_COUNT);
+        s->pitch = fr(PITCH_STEPS + 1); s->pulses = 1 + fr(8); s->gate = fr(GATE_COUNT);
         s->slide = fr(2); s->skip = fr(4) == 0; s->ratchet = 1 + fr(8); s->prob = fr(101);
         s->accum = fr(49) - 24;
         t->order = fr(ORD_COUNT); t->length = 1 + fr(NUM_STAGES); t->div_i = fr(NUM_DIVS);
@@ -413,6 +421,161 @@ static void test_fuzz(void) {
            worst_batch, SEQ_MAX_ACTIONS, dropped);
 }
 
+// 12. RANGE: the sliders span 1-4 octaves; the top of the slider is the
+//     range in semitones above the base, and a version 1 pattern still
+//     plays the same notes.
+static int first_pitch(const pattern_t *p) {
+    static log_t l;
+    run(p, 1000, &l);
+    for (int i = 0; i < l.n; i++)
+        if (l.a[i].type == ACT_PITCH && l.a[i].out == 0) return l.a[i].value / 100;
+    return -1;
+}
+
+static void test_range(void) {
+    static pattern_t p;
+    simple_pattern(&p);
+    p.scale_idx = 0;   // chromatic: no snapping
+    p.base_octave = 0;
+    p.stages[0].pitch = PITCH_STEPS;
+    int got[MAX_RANGE_OCT + 1];
+    for (int r = MIN_RANGE_OCT; r <= MAX_RANGE_OCT; r++) {
+        p.range_oct = r;
+        got[r] = first_pitch(&p);
+        CHECK(got[r] == CV_BASE_MIDI + 12 * r, "range %d: top of slider = %d", r, got[r]);
+    }
+    p.range_oct = 2;
+    p.stages[0].pitch = PITCH_STEPS / 2;
+    CHECK(first_pitch(&p) == CV_BASE_MIDI + 12, "range 2: middle = one octave up");
+    p.tracks[0].invert = 1;
+    p.stages[0].pitch = 0;
+    CHECK(first_pitch(&p) == CV_BASE_MIDI + 24, "invert flips within the range");
+    // version 1: semitones over 36 -> positions, the same notes
+    int bad = 0;
+    for (int semi = 0; semi <= 36; semi++) {
+        static pattern_t v1;
+        simple_pattern(&v1);
+        v1.scale_idx = 0;
+        v1.stages[0].pitch = (uint8_t)semi;
+        pattern_upgrade_v1(&v1);
+        if (stage_semi(&v1, v1.stages[0].pitch) != semi) bad++;
+    }
+    CHECK(bad == 0, "%d version 1 pitches moved", bad);
+    printf("range: 1-4 octaves (top = base + %d/%d/%d/%d), invert, version 1 pitches kept\n",
+           got[1] - CV_BASE_MIDI, got[2] - CV_BASE_MIDI, got[3] - CV_BASE_MIDI,
+           got[4] - CV_BASE_MIDI);
+}
+
+// 13. A MOD lane with a CC sends its value when it changes, and on PLAY.
+static void test_lane_cc(void) {
+    static pattern_t p;
+    simple_pattern(&p);
+    static const int8_t vals[NUM_STAGES] = {-100, -100, 0, 0, 100, 50, 50, -50};
+    for (int i = 0; i < NUM_STAGES; i++) p.mods[2].values[i] = vals[i];
+    p.mods[2].div_i = 0;   // every 1/16
+    p.lane_cc[2] = 74;
+    p.bpm = 120;
+    static log_t l;
+    run(&p, 8 * 125000 - 1000, &l);   // stages 1..8 of the lane
+    int got[16], n = 0;
+    for (int i = 0; i < l.n && n < 16; i++)
+        if (l.a[i].type == ACT_CC) {
+            CHECK(l.a[i].out == 2, "CC from lane %d", l.a[i].out);
+            got[n++] = l.a[i].value;
+        }
+    static const int want[] = {0, 64, 127, 95, 32};   // repeats aren't sent
+    CHECK(n == 5, "%d CCs sent", n);
+    for (int i = 0; i < n && i < 5; i++) CHECK(got[i] == want[i], "CC %d = %d", i, got[i]);
+    p.lane_cc[2] = 0;
+    run(&p, 1000000, &l);
+    int none = 0;
+    for (int i = 0; i < l.n; i++) none += l.a[i].type == ACT_CC;
+    CHECK(none == 0, "lane with CC off sent %d", none);
+    printf("lane CC: 0/64/127/95/32 on change only, nothing when off\n");
+}
+
+// 14. seq_engine_top_next(): true on the pulse TRK 1 starts its sequence
+//     over (FWD, REV, PEND, with skips and multi-pulse stages), else on the
+//     bar for RAND / BROWN.
+static int tops_in(const pattern_t *p, int pulses, uint32_t *at, int max) {
+    seq_engine_init(&eng, p, 1);
+    seq_actions_clear(&acts);
+    seq_engine_set_ext_clock(&eng, true);
+    seq_engine_ext_tempo(&eng, 125000);
+    seq_engine_start(&eng, 0, &acts);
+    int n = 0;
+    for (int k = 1; k <= pulses; k++) {
+        bool top = seq_engine_top_next(&eng);
+        seq_actions_clear(&acts);
+        seq_engine_ext_pulse(&eng, k * 125000LL, &acts);
+        // what really happened: TRK 1 entered its first playing stage
+        if (top && n < max) at[n++] = eng.clk;
+        if (top) CHECK(eng.tr[0].pulse_i == 1, "top at %u but mid-stage", eng.clk);
+    }
+    return n;
+}
+
+static void test_top_next(void) {
+    static pattern_t p;
+    uint32_t at[16];
+    simple_pattern(&p);
+    int n = tops_in(&p, 40, at, 16);   // FWD, 8 x 1 pulse
+    CHECK(n == 5 && at[0] == 8 && at[1] == 16 && at[4] == 40, "FWD: %d tops, first %u", n, at[0]);
+    p.tracks[0].length = 5;
+    p.stages[0].skip = 1;              // starts on stage 2: 4 stages
+    p.stages[2].pulses = 3;            // 1 + 3 + 1 + 1 = 6 pulses a pass
+    n = tops_in(&p, 24, at, 16);
+    CHECK(n == 4 && at[0] == 6 && at[3] == 24, "FWD skip/pulses: %d tops, first %u", n, at[0]);
+    simple_pattern(&p);
+    p.tracks[0].order = ORD_PEND;      // 0..7..1: 14 a pass
+    n = tops_in(&p, 28, at, 16);
+    CHECK(n == 2 && at[0] == 14 && at[1] == 28, "PEND: %d tops, first %u", n, at[0]);
+    p.tracks[0].order = ORD_REV;
+    p.tracks[0].div_i = 1;             // 1/8: 16 pulses a pass
+    n = tops_in(&p, 32, at, 16);
+    CHECK(n == 2 && at[0] == 16 && at[1] == 32, "REV /8: %d tops, first %u", n, at[0]);
+    p.tracks[0].order = ORD_RAND;
+    n = tops_in(&p, 48, at, 16);
+    CHECK(n == 3 && at[0] == 16 && at[2] == 48, "RAND: on the bar, %d tops", n);
+    printf("top of sequence: FWD, skips + pulses, PEND, REV /8; RAND on the bar\n");
+}
+
+// 15. JSON (Studio patches): a random pattern round-trips exactly; missing
+//     keys keep their defaults; junk is clamped.
+static void test_json(void) {
+    static pattern_t p, q, d;
+    int bad = 0;
+    for (int k = 0; k < 50; k++) {
+        pattern_default(&p);
+        for (int e = 0; e < 40; e++) random_edit(&p);
+        pattern_sanitise(&p);
+        cJSON *o = pattern_to_json(&p);
+        char *txt = cJSON_PrintUnformatted(o);
+        cJSON *back = cJSON_Parse(txt);
+        memset(&q, 0xA5, sizeof q);
+        pattern_from_json(back, &q);
+        // compare field by field (struct padding isn't data)
+        if (memcmp(p.stages, q.stages, sizeof p.stages) || memcmp(p.tracks, q.tracks, sizeof p.tracks) ||
+            memcmp(p.mods, q.mods, sizeof p.mods) || memcmp(p.lane_cc, q.lane_cc, sizeof p.lane_cc) ||
+            memcmp(p.lane_cc_ch, q.lane_cc_ch, sizeof p.lane_cc_ch) || p.bpm != q.bpm ||
+            p.root != q.root || p.scale_idx != q.scale_idx || p.base_octave != q.base_octave ||
+            p.range_oct != q.range_oct || p.merge_cv != q.merge_cv)
+            bad++;
+        cJSON_free(txt);
+        cJSON_Delete(o);
+        cJSON_Delete(back);
+    }
+    CHECK(bad == 0, "%d of 50 patterns changed in a JSON round trip", bad);
+    cJSON *o = cJSON_Parse("{\"bpm\": 99, \"range\": 9, \"stages\": [{\"pitch\": 200}]}");
+    pattern_from_json(o, &q);
+    cJSON_Delete(o);
+    pattern_default(&d);
+    CHECK(q.bpm == 99 && q.range_oct == MAX_RANGE_OCT && q.stages[0].pitch == PITCH_STEPS &&
+              q.stages[1].pitch == d.stages[1].pitch && q.tracks[1].order == d.tracks[1].order,
+          "partial / junk JSON");
+    printf("JSON: 50 random patterns round-trip; missing keys default, junk clamped\n");
+}
+
 int main(void) {
     test_no_drift();
     test_pitch_before_gate();
@@ -425,6 +588,10 @@ int main(void) {
     test_stop_flushes();
     test_swing_div2();
     test_glide();
+    test_range();
+    test_lane_cc();
+    test_top_next();
+    test_json();
     test_fuzz();
     printf(failures ? "\n%d FAILURES\n" : "\nall engine tests passed\n", failures);
     return failures ? 1 : 0;

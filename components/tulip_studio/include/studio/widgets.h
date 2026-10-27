@@ -65,3 +65,11 @@ typedef struct {
 sw_slider_t *sw_slider(lv_obj_t *parent, const char *label, int x, int y, int w, int h,
                        uint32_t color, const sw_slider_ops_t *ops, void *ud);
 void sw_slider_refresh(sw_slider_t *s);   // after the value changed elsewhere
+
+// A full-screen name entry with the on-screen keyboard, over everything
+// (lv_layer_top). SAVE (or the keyboard's tick) calls cb with the name -
+// printable, trimmed, never empty; CANCEL closes it.
+typedef void (*sw_text_cb_t)(const char *name, void *ud);
+void sw_text_entry(const char *title, const char *text, int max, uint32_t accent, sw_text_cb_t cb,
+                   void *ud);
+bool sw_text_entry_open(void);

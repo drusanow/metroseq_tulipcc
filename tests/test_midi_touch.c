@@ -183,7 +183,7 @@ static void test_master_equivalence(void) {
             p.stages[i].ratchet = 1 + rnd(3);
             p.stages[i].gate = rnd(GATE_COUNT);
             p.stages[i].slide = rnd(3) == 0;
-            p.stages[i].pitch = rnd(PITCH_RANGE);
+            p.stages[i].pitch = rnd(PITCH_STEPS);
         }
         for (int t = 0; t < NUM_TRACKS; t++) {
             p.tracks[t].div_i = rnd(4);
@@ -303,8 +303,52 @@ static void test_touch_cal(void) {
            "rejected\n", worst);
 }
 
+// A new pattern (a preset) waits for the top of TRK 1's sequence, then the
+// tracks start over with it on that very 1/16.
+static pattern_t next_pat;
+static int swaps;
+static void do_swap(void) {
+    pat = next_pat;
+    swaps++;
+}
+
+static void test_swap_on_top(void) {
+    setup();
+    sc.swap = do_swap;
+    int64_t t = 0;
+    const int64_t period = 20833;
+    static int64_t gates[64];
+    run_clocks(&t, 6, period, 0, gates, 0, NULL);
+    send(MP_START, 0, t);
+    run_clocks(&t, 1 + 6 * 3, period, 0, gates, 0, NULL);   // into stage 4
+    next_pat = pat;
+    next_pat.stages[0].pitch = PITCH_STEPS;   // stage 1 now plays 3 octaves up
+    seq_clock_swap(&sc);
+    swaps = 0;
+    int when = -1;
+    for (int k = 0; k < 6 * 8 && when < 0; k++) {
+        run_clocks(&t, 1, period, 0, gates, 0, NULL);
+        if (swaps) when = (int)eng.clk;
+    }
+    // stages 4..8 still played: the swap comes on 1/16 number 8 (the top)
+    CHECK(when == 0 && eng.tr[0].cur_stage == 0, "swapped at clk %d stage %d", when,
+          eng.tr[0].cur_stage);
+    CHECK(eng.tr[0].cur_cents == (CV_BASE_MIDI + 36) * 100, "new pattern's pitch %d",
+          (int)eng.tr[0].cur_cents);
+    // stopped: the next PLAY starts with the new one
+    send(MP_STOP, 0, t);
+    next_pat.stages[0].pitch = 0;
+    seq_clock_swap(&sc);
+    t += period;
+    send(MP_START, 0, t);
+    run_clocks(&t, 1, period, 0, gates, 0, NULL);   // the downbeat
+    CHECK(swaps == 2 && eng.tr[0].cur_cents == CV_BASE_MIDI * 100, "swap on PLAY");
+    printf("new pattern: waits for the top of TRK 1's sequence, then starts from stage 1\n");
+}
+
 int main(void) {
     test_clock_follow();
+    test_swap_on_top();
     test_stop_continue_spp();
     test_tempo_change_and_dropout();
     test_master_equivalence();

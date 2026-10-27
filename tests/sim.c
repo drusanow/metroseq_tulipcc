@@ -11,7 +11,7 @@
 
 #include "seq_engine.h"
 
-static const char *const ACT_NAMES[] = {"GATE", "PITCH", "AON", "AOFF"};
+static const char *const ACT_NAMES[] = {"GATE", "PITCH", "AON", "AOFF", "CC"};
 
 static int load_pattern(const char *path, pattern_t *p) {
     FILE *f = fopen(path, "r");
@@ -26,7 +26,8 @@ static int load_pattern(const char *path, pattern_t *p) {
         } else if (sscanf(line, "stage %d %d %d %d %d %d %d %d %d", &i, &a, &b, &c, &d, &e, &g,
                           &h, &k) == 9) {
             stage_t *s = &p->stages[i];
-            s->pitch = a; s->pulses = b; s->gate = c; s->slide = d; s->skip = e;
+            s->pitch = (uint8_t)rdiv(a * PITCH_STEPS, 36);   // the Python's semitones over 3 octaves
+            s->pulses = b; s->gate = c; s->slide = d; s->skip = e;
             s->ratchet = g; s->prob = h; s->accum = k;
         } else if (sscanf(line, "track %d %d %d %d %d %d %d %d %d %d", &i, &a, &b, &c, &d, &e,
                           &g, &h, &k, &m) == 10) {

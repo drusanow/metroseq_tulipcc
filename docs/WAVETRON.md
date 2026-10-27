@@ -66,6 +66,9 @@ AMYboard's `/user/wt_patches.json` there and the patches load.
   never inherits settings from the previous one.
 * The MIDI channel belongs to the setup, not the sound: loading a patch keeps it.
 * The current sound is saved by itself in `/files/wavetron/state.json`.
+* Before this update the apps' `/files` only knew 8.3 file names, so `wt_patches.json`
+  and the `wavetables` folder couldn't be created there. Both work now.
+* A Studio patch carries the current sound too ([STUDIO.md](STUDIO.md#studio-patches)).
 
 ## MIDI
 

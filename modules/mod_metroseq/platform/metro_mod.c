@@ -19,6 +19,7 @@
 #include "driver/gpio.h"
 #include "engine/seq_clock.h"
 #include "engine/seq_engine.h"
+#include "engine/seq_json.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "freertos/FreeRTOS.h"
@@ -29,6 +30,7 @@
 #include "storage.h"
 #include "studio/studio_hw.h"
 #include "ui/ui.h"
+#include "ui/ui_common.h"
 
 static const char *TAG = "metro";
 
@@ -74,6 +76,74 @@ void pat_load(pattern_t *dst) {
     pat_lock();
     memcpy(dst, &g_pat, sizeof g_pat);
     pat_unlock();
+}
+
+// --- a new pattern on the top of the sequence -------------------------------------------
+
+static pattern_t s_next;
+static volatile uint32_t s_swaps;
+
+// in place, keeping the tempo (lock held)
+static void put_next(void) {
+    uint16_t bpm = g_pat.bpm;
+    memcpy(&g_pat, &s_next, sizeof g_pat);
+    g_pat.bpm = bpm;
+    s_swaps++;
+}
+
+// rt task, at the top of TRK 1's sequence (seq_clock.c; lock held)
+static void rt_swap(void) {
+    bool merge = g_pat.merge_cv;
+    put_next();
+    if (merge != g_pat.merge_cv) seq_engine_outputs_changed(&s_eng, studio_now_us(), &s_acts);
+}
+
+void pat_swap(const pattern_t *p) {
+    pat_lock();
+    memcpy(&s_next, p, sizeof s_next);
+    pattern_sanitise(&s_next);
+    bool now = !g_status.playing;
+    if (now) {
+        s_sc.swap_pending = false;
+        put_next();
+    } else {
+        s_sc.swap_pending = true;
+    }
+    pat_unlock();
+    if (now) seq_cmd(CMD_OUTPUTS_CHANGED);   // nothing left high across the swap
+}
+
+bool pat_swap_pending(void) { return s_sc.swap_pending; }
+
+bool pat_swap_cancel(void) {
+    pat_lock();
+    bool was = s_sc.swap_pending;
+    s_sc.swap_pending = false;
+    pat_unlock();
+    return was;
+}
+
+uint32_t pat_snapshot(pattern_t *dst) {
+    pat_lock();
+    memcpy(dst, &g_pat, sizeof g_pat);
+    uint32_t n = s_swaps;
+    pat_unlock();
+    return n;
+}
+uint32_t pat_swap_count(void) { return s_swaps; }
+
+// stopped with one still waiting: it goes in now (the UI task)
+void pat_swap_poll(void) {
+    if (!s_sc.swap_pending || g_status.playing) return;
+    bool done = false;
+    pat_lock();
+    if (s_sc.swap_pending && !g_status.playing) {
+        s_sc.swap_pending = false;
+        put_next();
+        done = true;
+    }
+    pat_unlock();
+    if (done) seq_cmd(CMD_OUTPUTS_CHANGED);
 }
 
 void status_info(const char *msg) {
@@ -159,6 +229,16 @@ static void execute(const seq_actions_t *acts) {
         case ACT_AUDIO_OFF:
             note_out(a->out, TN_OFF, 0, 0, a->due_us);
             break;
+        case ACT_CC: {
+            // a MOD lane's value as a MIDI CC (MOD page)
+            uint8_t cc = g_pat.lane_cc[a->out & 7], ch = g_pat.lane_cc_ch[a->out & 7];
+            if (cc) {
+                uint8_t m[3] = {(uint8_t)(0xB0 | ((ch - 1) & 15)), (uint8_t)(cc & 127),
+                                (uint8_t)(a->value & 127)};
+                studio_midi_out(m, 3);
+            }
+            break;
+        }
         }
         if (!ok) g_status.i2c_errors++;
     }
@@ -335,16 +415,62 @@ static void m_init(void) {
     pattern_default(&g_pat);
     g_pat.bpm = (uint16_t)((studio_bpm_x100() + 50) / 100);
     storage_init();
+    preset_init();   // the preset played last, with every change kept
     preview_init();
     seq_engine_init(&s_eng, &g_pat, esp_random());
     s_sc = (seq_clock_t){.e = &s_eng, .acts = &s_acts, .lock = pat_lock, .unlock = pat_unlock,
-                         .flush = flush};
+                         .flush = flush, .swap = rt_swap};
     seq_clock_sink(&s_sc, &s_inner);
     mod_metroseq.sink = s_inner;
     mod_metroseq.sink.start = m_start;
 }
 
 static bool m_busy(void) { return g_status.playing || storage_write_pending(); }
+
+// --- Studio patches: the pattern, all 10 presets, which one is playing -----------------------
+
+static cJSON *m_patch_save(void) {
+    cJSON *o = cJSON_CreateObject();
+    static pattern_t p;
+    pat_load(&p);
+    cJSON_AddItemToObject(o, "pattern", pattern_to_json(&p));
+    cJSON_AddNumberToObject(o, "preset", preset_current());
+    cJSON *a = cJSON_AddArrayToObject(o, "presets");
+    for (int i = 0; i < NUM_PRESETS; i++)
+        cJSON_AddItemToArray(a, storage_preset_get(i, &p) ? pattern_to_json(&p) : cJSON_CreateNull());
+    cJSON_AddBoolToObject(o, "preview", preview_enabled());
+    return o;
+}
+
+static void m_patch_load(const cJSON *o) {
+    static pattern_t p;
+    const cJSON *a = cJSON_GetObjectItemCaseSensitive(o, "presets");
+    if (cJSON_IsArray(a)) {
+        for (int i = 0; i < NUM_PRESETS; i++) {
+            const cJSON *x = cJSON_GetArrayItem(a, i);
+            if (cJSON_IsObject(x)) {
+                pattern_from_json(x, &p);
+                storage_preset_save(i, &p);
+            } else {
+                storage_preset_clear(i);
+            }
+        }
+    }
+    const cJSON *pat = cJSON_GetObjectItemCaseSensitive(o, "pattern");
+    if (cJSON_IsObject(pat)) {
+        pattern_from_json(pat, &p);
+        p.bpm = (uint16_t)clampi((studio_bpm_x100() + 50) / 100, MIN_BPM, MAX_BPM);
+        pat_store(&p);
+        // in step with the others: the tracks start over on the next 1/16
+        seq_cmd(CMD_OUTPUTS_CHANGED);
+        seq_cmd(CMD_RESET);
+    }
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, "preset");
+    preset_set_current(cJSON_IsNumber(v) ? v->valueint : 0);
+    v = cJSON_GetObjectItemCaseSensitive(o, "preview");
+    if (cJSON_IsBool(v)) preview_set_enabled(cJSON_IsTrue(v));
+    if (ui_built()) ui_refresh_all();
+}
 
 static const char *const OUTS[NUM_TRACKS] = {"TRK 1", "TRK 2"};
 
@@ -367,4 +493,6 @@ tmod_t mod_metroseq = {
     .ui_create = ui_create,
     .ui_poll = ui_poll,
     .busy = m_busy,
+    .patch_save = m_patch_save,
+    .patch_load = m_patch_load,
 };

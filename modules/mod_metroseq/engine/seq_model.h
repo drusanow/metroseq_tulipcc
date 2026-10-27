@@ -14,6 +14,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -27,7 +28,7 @@ extern "C" {
 #define NUM_MOD_LANES   8
 #define MASTER_DIV      16   // master clock: 16 pulses per bar (1/16 grid)
 
-#define NUM_PRESETS     16
+#define NUM_PRESETS     10
 #define MAX_PROJECTS    16
 #define MAX_PROJECT_NAME_LEN 24
 
@@ -36,7 +37,13 @@ extern "C" {
 #define BPM_STEP        1
 #define BPM_STEP_FAST   10
 
-#define PITCH_RANGE     36   // slider span in semitones (3 octaves)
+// A stage's pitch slider has PITCH_STEPS positions; the pattern's RANGE
+// (1-4 octaves) says how many semitones the whole slider spans, so the
+// same melody can be squeezed into one octave or spread over four.
+#define PITCH_STEPS     48
+#define MIN_RANGE_OCT   1
+#define MAX_RANGE_OCT   4
+#define DEF_RANGE_OCT   3    // the Python's fixed 36 semitones
 #define CV_BASE_MIDI    36   // note that slider 0 names (C2)
 #define CV_V0_MIDI      12   // MIDI note at 0V on the pitch CV (C0 = 0V)
 // The pitch CV spans the GP8413's full 0-10 V: C0 (0 V) .. C10 (10 V).
@@ -79,7 +86,7 @@ extern const scale_t SCALES[NUM_SCALES];
 
 // One of the 8 shared stages. Both tracks read this same data.
 typedef struct {
-    uint8_t pitch;      // semitone offset, 0..PITCH_RANGE (slider)
+    uint8_t pitch;      // slider position, 0..PITCH_STEPS (see stage_semi())
     uint8_t pulses;     // PULSE COUNT 1..8
     uint8_t gate;       // GATE_* mode
     uint8_t slide;      // bool: glide the pitch into this stage
@@ -122,9 +129,16 @@ typedef struct {
     stage_t  stages[NUM_STAGES];
     track_cfg_t tracks[NUM_TRACKS];
     mod_lane_cfg_t mods[NUM_MOD_LANES];
+    // --- version 2: appended, so a version 1 record is a prefix of this ---
+    uint8_t  range_oct;                  // the sliders span 1..4 octaves
+    uint8_t  lane_cc[NUM_MOD_LANES];     // MIDI CC out per lane: 0 = off, else the CC number
+    uint8_t  lane_cc_ch[NUM_MOD_LANES];  // its MIDI channel, 1..16
 } pattern_t;
 
-#define PATTERN_VERSION 1
+#define PATTERN_VERSION 2
+// Version 1 (before RANGE and the CC lanes): the first fields, padded to
+// the struct's 2-byte alignment. Its pitches were semitones over 3 octaves.
+#define PATTERN_V1_SIZE ((offsetof(pattern_t, range_oct) + 1) & ~(size_t)1)
 
 // --- helpers -------------------------------------------------------------
 
@@ -172,6 +186,20 @@ static inline int fold_to_cv_range(int midi) {
 static inline int eff_base_midi(const pattern_t *p) {
     return CV_BASE_MIDI + 12 * p->base_octave;
 }
+
+// A slider position as semitones above the base, over the pattern's RANGE
+// (before the scale snaps it).
+static inline int stage_semi(const pattern_t *p, int pos) {
+    return (int)rdiv(pos * p->range_oct * 12, PITCH_STEPS);
+}
+
+// A lane value (-100..100) as a MIDI CC value (0..127).
+static inline int lane_cc_value(int v) {
+    return (int)rdiv((v + 100) * 127, 200);
+}
+
+// A version 1 record (zero-filled past PATTERN_V1_SIZE) -> version 2.
+void pattern_upgrade_v1(pattern_t *p);
 
 // Clamp every field into range (used after loading from storage, so a
 // corrupt or old blob can never drive the engine out of bounds).

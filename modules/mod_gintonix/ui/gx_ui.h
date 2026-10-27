@@ -8,5 +8,8 @@
 void gx_ui_create(lv_obj_t *scr);
 void gx_ui_poll(bool visible);
 void gx_ui_show(bool shown);
+// Studio patches: the kit with its patterns, the MIDI channel
+struct cJSON *gx_patch_save(void);
+void gx_patch_load(const struct cJSON *o);
 // Boot: load the last used kit slot into g_gx (no UI needed).
 void gx_boot_load(void);

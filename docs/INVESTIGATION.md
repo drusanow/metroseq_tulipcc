@@ -156,7 +156,8 @@ Everything in the sketch is ported:
   octave, invert, and audio mute per track.
 * **MOD:** 8 lanes with bipolar sliders, order, length, div, depth, and 13 routing destinations.
 * **SET:** root, scale (11 scales), base octave, CV on/off, rescan, MERGE T2>T1 with TRK1 priority,
-  audio-preview toggle, 16 presets, copy/paste, and named projects with the on-screen keyboard.
+  audio-preview toggle, and named projects with the on-screen keyboard. (The presets, with
+  copy/paste, are now on the SEQ page: see section 9.)
 * **Audio preview** without AMY: two saw voices with the same envelope and filter settings, on I2S.
 * **New:** a timing panel on SET showing live gate lateness (avg/max/histogram), resyncs, late-drops,
   I2C errors and deferred touch reads, with a CLR button.
@@ -296,3 +297,75 @@ alongside other apps (`studio`). What changed for its timing:
   and MIDI tasks, so it can never delay a gate. The preview voice is now part of that
   mix.
 * **MIDI OUT:** GPIO11 is now MIDI OUT, so pick another pin for the timing probe.
+
+## 9. Follow-up: presets on the SEQ page, RANGE, MIDI out
+
+| SEQ with its presets | SET |
+|---|---|
+| ![seq](img/1_seq.png) | ![set](img/5_set.png) |
+| **TRK, with MIDI out** | **MOD, with MIDI CC out** |
+| ![trk](img/3_trk.png) | ![mod](img/4_mod.png) |
+
+### 9.1 Presets
+
+* **10 presets, under the tracks on the SEQ page.** The lit (orange) number is the one
+  playing, and it **keeps every change** - steps, tracks, MOD lanes, quantiser - saved to
+  its slot as you go. There's no SAVE button. Numbers holding a pattern are white,
+  empty ones dim.
+* **Another number comes in on the top of the sequence.** It blinks yellow until TRK 1
+  next starts its sequence over, then both tracks start from stage 1 with it.
+  * "The top" is the pulse on which TRK 1 enters the stage PLAY starts on. That follows
+    its ORDER, LENGTH, SKIPs and pulse counts, so FWD, REV and PEND all switch where the
+    loop starts again (`seq_engine_top_next()`).
+  * RAND and BROWN have no start, so with those it's the next bar.
+  * While stopped it comes in at once. Tapping the lit number again while another is
+    waiting cancels it.
+  * The swap happens in the real-time task, under the pattern lock, on the 1/16 itself
+    (`seq_clock.c`), so it can't be late.
+* **An empty number** takes a copy of what's playing, and becomes the one you edit.
+* **COPY / PASTE** are at the end of the row. PASTE replaces the current preset, also on
+  the top of the sequence.
+* **The tempo isn't part of a preset any more:** switching pattern never jumps the
+  tempo (that's the Studio's). Loading a named project still sets it.
+* Writes go to flash once edits have been quiet for 1.5 s, and wait for STOP
+  (`METRO_DEFER_FLASH_WHILE_PLAYING`). The preset you were on comes back at power-on.
+* Your existing presets 1-10 and projects are converted on first start. They play the
+  same notes; presets 11-16 are no longer shown.
+
+### 9.2 RANGE: the sliders over 1-4 octaves
+
+SET has **Range** under Base octave. The stage sliders span 1, 2, 3 or 4 octaves above
+the base, and the scale snaps them as before. Changing it rescales the whole melody: the
+same slider positions, squeezed into one octave or spread over four. 3 octaves is the
+old fixed span, and **Sliders span** shows the notes it covers.
+
+### 9.3 MIDI out per track, and MIDI CC per MOD lane
+
+* **TRK → MIDI out:** OFF (the track's own sound) or CH 1-16. It's the same setting as
+  the track's route on the Studio home page. In Studio, a track routed to a synth shows
+  it (`> SLOE`). **Notes** (formerly *Audio*) turns a track's notes off everywhere; CV
+  still plays.
+* **MOD → MIDI CC / CC channel:** each lane can send its value as a CC (0-127, centre
+  64) on its own channel, whenever it steps to a different value, and on PLAY. The raw
+  lane value is sent; DEPTH only scales the internal routing.
+
+### 9.4 The SET page
+
+Three columns of the same rows: a label, then a `-` value `+` stepper or one button of
+the same width. **QUANTISER** (root, scale, base octave, range), **CV OUTPUT** (on/off,
+rescan, routing, status) and **SETUP** (clock, preview, touch calibration). Then
+**PROJECTS** and **TIMING** across the page.
+
+### 9.5 Verified on the host
+
+* **RANGE:** the top of the slider is base + 12/24/36/48 semitones; invert flips within
+  the range; every version 1 pitch plays the same note after conversion.
+* **Lane CC:** the values sent are 0/64/127/95/32 for the test lane, on change only, and
+  nothing is sent with the CC off.
+* **The top of the sequence:** checked for FWD, FWD with skips and multi-pulse stages,
+  PEND, REV at 1/8, and RAND (on the bar).
+* **Swap:** through the master clock, a new pattern waits for the top, then stage 1
+  plays its pitch; when stopped, it starts on the next PLAY.
+* **JSON** (Studio patches): 50 random patterns round-trip exactly; missing keys
+  default and junk is clamped.
+* The Python parity test still matches on all 6 patterns.

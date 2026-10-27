@@ -37,6 +37,17 @@ void pat_unlock(void);
 void pat_store(const pattern_t *src);
 void pat_load(pattern_t *dst);
 
+// A new pattern (a preset, PASTE, a project) comes in on the top of TRK 1's
+// sequence, so a change always lands on the start of a loop; at once while
+// stopped. The tempo stays as it is. UI task.
+void pat_swap(const pattern_t *p);
+bool pat_swap_pending(void);     // one is waiting for the top
+bool pat_swap_cancel(void);      // false: too late, it has gone in
+// pat_load(), plus pat_swap_count() at that instant
+uint32_t pat_snapshot(pattern_t *dst);
+uint32_t pat_swap_count(void);   // bumps each time one has gone in
+void pat_swap_poll(void);        // UI poll: stopped meanwhile -> in now
+
 // --- sequencer status, published by the sequencer task -------------------
 
 #define LATE_BUCKETS 7   // <50us <100 <250 <500 <1ms <2ms >=2ms

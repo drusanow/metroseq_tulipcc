@@ -13,10 +13,17 @@ static void end(seq_clock_t *c) {
     }
 }
 
+// the waiting pattern goes in (lock held)
+static void take_swap(seq_clock_t *c) {
+    c->swap_pending = false;
+    if (c->swap) c->swap();
+}
+
 static void s_start(void *ctx, int64_t t) {
     seq_clock_t *c = ctx;
     c->restart_pending = false;
     begin(c);
+    if (c->swap_pending) take_swap(c);
     seq_engine_start(c->e, t, c->acts);
     end(c);
 }
@@ -47,6 +54,10 @@ static void s_pulse(void *ctx, int64_t t, uint32_t pos16) {
     seq_clock_t *c = ctx;
     (void)pos16;
     begin(c);
+    if (c->swap_pending && seq_engine_top_next(c->e)) {
+        take_swap(c);
+        c->restart_pending = true;
+    }
     if (c->restart_pending || !c->e->playing) {
         // RST / a new pattern, or switched on while the others play: the
         // tracks start from stage 1 on this 1/16, in step with everyone

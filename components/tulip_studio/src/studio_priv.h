@@ -66,3 +66,4 @@ void audio_start(void);
 // shell.c
 void shell_ui_create(void);
 void shell_ui_poll(void);
+void shell_set_open(int i, bool on);   // open / close an app in Studio

@@ -347,4 +347,6 @@ tmod_t mod_gintonix = {
     .ui_poll = gx_ui_poll,
     .ui_show = gx_ui_show,
     .busy = m_busy,
+    .patch_save = gx_patch_save,
+    .patch_load = gx_patch_load,
 };

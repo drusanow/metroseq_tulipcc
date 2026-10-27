@@ -64,7 +64,7 @@ void pattern_sanitise(pattern_t *p) {
     p->merge_cv = p->merge_cv ? 1 : 0;
     for (int i = 0; i < NUM_STAGES; i++) {
         stage_t *s = &p->stages[i];
-        s->pitch = clampi(s->pitch, 0, PITCH_RANGE);
+        s->pitch = clampi(s->pitch, 0, PITCH_STEPS);
         s->pulses = clampi(s->pulses, 1, 8);
         s->gate = clampi(s->gate, 0, GATE_COUNT - 1);
         s->slide = s->slide ? 1 : 0;
@@ -94,6 +94,21 @@ void pattern_sanitise(pattern_t *p) {
         m->div_i = clampi(m->div_i, 0, NUM_DIVS - 1);
         m->depth = clampi(m->depth, 0, 100);
         m->dest = clampi(m->dest, 0, NUM_DESTS - 1);
+        p->lane_cc[l] = clampi(p->lane_cc[l], 0, 127);
+        p->lane_cc_ch[l] = clampi(p->lane_cc_ch[l], 1, 16);
+    }
+    p->range_oct = clampi(p->range_oct, MIN_RANGE_OCT, MAX_RANGE_OCT);
+}
+
+void pattern_upgrade_v1(pattern_t *p) {
+    // pitches were semitones over 36; now positions over PITCH_STEPS at a
+    // 3-octave RANGE, which plays exactly the same notes
+    for (int i = 0; i < NUM_STAGES; i++)
+        p->stages[i].pitch = (uint8_t)rdiv(clampi(p->stages[i].pitch, 0, 36) * PITCH_STEPS, 36);
+    p->range_oct = DEF_RANGE_OCT;
+    for (int l = 0; l < NUM_MOD_LANES; l++) {
+        p->lane_cc[l] = 0;
+        p->lane_cc_ch[l] = 1;
     }
 }
 
@@ -115,7 +130,9 @@ static void pattern_blank(pattern_t *p) {
         p->mods[l].order = ORD_FWD;
         p->mods[l].length = NUM_STAGES;
         p->mods[l].div_i = 2;   // 1/8. - a slow-ish LFO feel
+        p->lane_cc_ch[l] = 1;
     }
+    p->range_oct = DEF_RANGE_OCT;
 }
 
 void pattern_default(pattern_t *p) {
@@ -127,7 +144,7 @@ void pattern_default(pattern_t *p) {
 
     pattern_blank(p);
     for (int i = 0; i < NUM_STAGES; i++) {
-        p->stages[i].pitch = pitches[i];
+        p->stages[i].pitch = (uint8_t)rdiv(pitches[i] * PITCH_STEPS, 12 * DEF_RANGE_OCT);
         p->stages[i].pulses = pulses[i];
         p->stages[i].gate = gates[i];
     }

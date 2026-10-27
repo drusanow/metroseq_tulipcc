@@ -14,10 +14,16 @@ with no MicroPython or AMY:
   * One tempo and transport, MIDI clock / Start / Stop for all of them.
   * A mixer on the Studio home page: a level, mute and peak meter per app.
   * metroseq's tracks can play Sloe or Wavetron on the Tulip, or go out of MIDI OUT.
+  * **Studio patches:** the whole session - tempo, apps, mixer, routing, and every app's
+    sounds, patterns and presets - saved to one JSON file and loaded back.
 * **metroseq**: a port of [`reference/metropolix_tulip.py`](reference/metropolix_tulip.py).
   It is a Metropolix-style two-track CV sequencer driving Makerfabs Mabee (GP8413) DACs,
   with rock-solid timing. Design and verification are in
   **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**.
+  * 10 presets under the tracks. They save themselves as you edit, and a new one comes
+    in on the top of TRK 1's sequence ([§9](docs/INVESTIGATION.md#9-follow-up-presets-on-the-seq-page-range-midi-out)).
+  * A RANGE of 1-4 octaves for the sliders, MIDI out per track, and a MIDI CC per MOD
+    lane.
 * **[GinTonix](docs/GINTONIX.md)**: a port of
   [`reference/gintonix/gintonix.py`](reference/gintonix/gintonix.py), the
   Microtonic-style drum machine.
@@ -26,6 +32,8 @@ with no MicroPython or AMY:
   * Your Python kit and bank files load as they are.
 * **Sloe**: a small subtractive synth, the destination for routed sequencer tracks.
   It is a page inside Studio, and also an app on its own, played from MIDI IN.
+  Factory presets plus your own: **SAVE**, **SAVE AS** and **DEL** in its header (yours
+  are marked `*`, in `/files/sloe/presets.json`).
 * **[Wavetron](docs/WAVETRON.md)**: a port of the AMYboard sketch `wavetron_v1_2.py`, a
   dual wavetable synth.
   * 4 voices (MONO / UNISON / POLY), a 4 x 11 mod matrix with audio-rate FM, a filter and
@@ -122,7 +130,7 @@ because that overwrites the launcher; push it instead.
 | `METRO_DAC_I2C_HZ` | 400000 | DAC write speed. Lower to 100000 if the timing panel shows I2C errors |
 | `METRO_TOUCH_I2C_HZ` | 100000 | GT911 speed (Tulip's value) |
 | `METRO_CV_SET_RANGE_10V` | y | Force each GP8413 into its 0–10 V range at boot |
-| `METRO_DEFER_FLASH_WHILE_PLAYING` | y | Preset/project flash commits wait for STOP |
+| `METRO_DEFER_FLASH_WHILE_PLAYING` | y | Preset/project flash commits wait for STOP (presets save themselves; this only delays the flash write) |
 | `METRO_TIMING_PROBE_GPIO` | -1 | Mirror TRK1 gate timing onto a pin for a scope (GPIO11 is MIDI OUT now: pick a free pin) |
 
 **CV wiring:**
@@ -132,8 +140,9 @@ because that overwrites the launcher; push it instead.
 * **MERGE T2>T1:** both tracks share 0x59, with TRK 1 taking priority.
 * **MIDI:**
   * **IN** (GPIO12): clock, transport and MMC go to every app when the clock is MIDI
-    (Studio home, or metroseq SET → `CLOCK: MIDI`); notes and CCs go by channel.
-  * **OUT** (GPIO11): clock out, GinTonix pattern out, routed tracks.
+    (Studio home, or metroseq SET → Clock `MIDI`); notes and CCs go by channel.
+  * **OUT** (GPIO11): clock out, GinTonix pattern out, routed tracks, metroseq's MOD
+    lane CCs.
 * **Calibration:** measure VOUT1 at two notes and edit `CAL[]` in
   `modules/mod_metroseq/platform/cv_dac.c`.
 * **Power:** if the Tulip browns out at power-on with a DAC attached, power the DAC from

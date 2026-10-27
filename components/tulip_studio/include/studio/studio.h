@@ -40,6 +40,8 @@
 extern "C" {
 #endif
 
+struct cJSON;
+
 #define STUDIO_MAX_MODULES  6
 #define STUDIO_SR           44100
 #define STUDIO_BLOCK        48        // frames per render() call (1.09 ms)
@@ -133,6 +135,15 @@ typedef struct tmod {
     // Before leaving to the launcher: true while it still has work to
     // finish (a flash write); the runtime waits for it.
     bool (*busy)(void);
+
+    // --- Studio patches (UI task) ---
+    // Everything the app needs to come back as it was - its sound, its
+    // patterns and presets, its MIDI channel - as a cJSON object (the
+    // caller deletes it), and back. Keys that are missing keep their
+    // defaults, so an older patch still loads. Called whether or not the
+    // app's screen has been built.
+    struct cJSON *(*patch_save)(void);
+    void (*patch_load)(const struct cJSON *o);
 } tmod_t;
 
 // Start everything: the module list, in switcher order. Never returns
@@ -241,6 +252,22 @@ void studio_exit_to_launcher(void);
 
 // Files for module data live in /files/<name>/ (mounted by the runtime).
 const char *studio_files_root(void);   // "/files", or NULL if no storage
+
+// --- Studio patches -----------------------------------------------------------------------
+// A patch is the whole session in one file, /files/studio/patches/<name>.json:
+// the tempo and volume, which apps are open, the mixer, the routing, and
+// each app's patch_save(). UI task.
+#define STUDIO_PATCH_NAME   24
+#define STUDIO_MAX_PATCHES  64
+// Names of the saved patches, sorted; returns how many.
+int studio_patch_list(char (*names)[STUDIO_PATCH_NAME + 1], int max);
+bool studio_patch_save(const char *name);
+// false + why in err (a missing app is not an error: it's skipped)
+bool studio_patch_load(const char *name, char *err, int errlen);
+bool studio_patch_delete(const char *name);
+// The whole session as JSON / from JSON (the file's contents).
+struct cJSON *studio_patch_to_json(const char *name);
+void studio_patch_from_json(const struct cJSON *o);
 
 #ifdef __cplusplus
 }

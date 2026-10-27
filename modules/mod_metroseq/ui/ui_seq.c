@@ -16,7 +16,7 @@ static col_t s_cols[NUM_STAGES];
 
 static void refresh_note(int i) {
     const stage_t *st = &g_pat.stages[i];
-    int semi = quantise(st->pitch, &SCALES[g_pat.scale_idx], g_pat.root);
+    int semi = quantise(stage_semi(&g_pat, st->pitch), &SCALES[g_pat.scale_idx], g_pat.root);
     char nm[8];
     note_name(eff_base_midi(&g_pat) + semi, nm, sizeof nm);
     lv_label_set_text(s_cols[i].note_lbl, nm);
@@ -25,7 +25,7 @@ static void refresh_note(int i) {
 static void slider_cb(lv_event_t *e) {
     int i = (int)(intptr_t)lv_event_get_user_data(e);
     int v = lv_slider_get_value(lv_event_get_target(e));
-    g_pat.stages[i].pitch = clampi(v, 0, PITCH_RANGE);
+    g_pat.stages[i].pitch = clampi(v, 0, PITCH_STEPS);
     refresh_note(i);
 }
 
@@ -102,7 +102,7 @@ void seq_page_create(lv_obj_t *parent) {
         c->slider = lv_slider_create(s_panel);
         lv_obj_set_size(c->slider, SLIDER_W, SLIDER_H);
         lv_obj_set_pos(c->slider, x + (COL_INNER - SLIDER_W) / 2, yv + 74);
-        lv_slider_set_range(c->slider, 0, PITCH_RANGE);
+        lv_slider_set_range(c->slider, 0, PITCH_STEPS);
         ui_style_bar_slider(c->slider, C_KNOB_SEQ);
         lv_obj_add_event_cb(c->slider, slider_cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
         lv_obj_remove_flag(c->slider, LV_OBJ_FLAG_SCROLLABLE);
@@ -116,6 +116,8 @@ void seq_page_create(lv_obj_t *parent) {
         c->skip_btn = ui_btn(s_panel, "SKP", x + half + 6, half, 30, toggle_skip, i, C_BTN_DK,
                              by + 68, NULL);
     }
+    // the presets, under the tracks
+    preset_row_create(s_panel, 4 + 74 + SLIDER_H + 38 + 98 + 12);
     seq_page_refresh();
 }
 

@@ -34,6 +34,33 @@ void pat_lock(void) {}
 void pat_unlock(void) {}
 void pat_store(const pattern_t *src) { g_pat = *src; }
 void pat_load(pattern_t *dst) { *dst = g_pat; }
+static uint32_t s_swaps;
+static bool s_swap_pending;
+static pattern_t s_next;
+void pat_swap(const pattern_t *p) {
+    s_next = *p;
+    if (!g_status.playing) {
+        g_pat = s_next;
+        s_swaps++;
+    } else {
+        s_swap_pending = true;
+    }
+}
+bool pat_swap_pending(void) { return s_swap_pending; }
+bool pat_swap_cancel(void) {
+    bool w = s_swap_pending;
+    s_swap_pending = false;
+    return w;
+}
+uint32_t pat_swap_count(void) { return s_swaps; }
+void pat_swap_poll(void) {}
+uint32_t pat_snapshot(pattern_t *d) {
+    *d = g_pat;
+    return s_swaps;
+}
+static int s_cur = -1;
+int storage_cur_preset(void) { return s_cur; }
+void storage_set_cur_preset(int s) { s_cur = s; }
 void status_info(const char *msg) {
     snprintf(g_status.info, sizeof g_status.info, "%s", msg);
     g_status.info_seq++;
@@ -89,8 +116,11 @@ tmod_t mod_metroseq = {
 
 int main(void) {
     pattern_default(&g_pat);
+    g_pat.lane_cc[0] = 74;
     storage_preset_save(0, &g_pat);
     storage_preset_save(3, &g_pat);
+    storage_preset_save(5, &g_pat);
+    preset_init();
     g_status.cv_enabled = true;
     g_status.dac_present[0] = true;
     g_status.cv_ready = true;
@@ -121,6 +151,8 @@ int main(void) {
     g_status.lane_disp[0] = 3;
     status_info("CV ready");
     hx_pump(50);
+    hx_tap(SEQ_X0 + 3 * 70 + 30, PAGE_Y + 456 + 22 + 20);   // preset 4: waits for the top
+    hx_pump(50);
     hx_save("metroseq_1_seq");
     hx_tap(SEQ_X0 + 3 * COL_W + 50, PAGE_Y + 4 + 14 + 15);   // stage 4 -> detail
     hx_save("metroseq_2_detail");
@@ -134,7 +166,7 @@ int main(void) {
     show_page(3);
     hx_pump(300);
     hx_save("metroseq_5_set");
-    hx_tap(110 + 60, PAGE_Y + 428 + 20);   // SAVE AS...
+    hx_tap(24 + 75, PAGE_Y + 358 + 20);   // SAVE AS...
     hx_save("metroseq_6_save_project");
     hx_tap(232 + 434 + 55, 45 + 102 + 20); // Cancel
     show_page(0);
@@ -194,6 +226,12 @@ int main(void) {
     studio_next_app();
     hx_pump(100);
     hx_save("sloe_1");
+    hx_tap(484 + 38, 28);       // SAVE AS
+    hx_pump(100);
+    hx_save("sloe_2_save_as");
+    hx_tap(630 + 80, 110 + 24); // SAVE
+    hx_pump(100);
+    hx_save("sloe_3_saved");
 
     // Wavetron: a chord playing, so the displays move. A WAV in its folder
     // (24-bit stereo, 32 cycles) for the browser.
@@ -251,8 +289,19 @@ int main(void) {
         hx_save(pages[k - 1]);
     }
     hx_tap(173, 28);
-    // back home with a closed app
+    // a Studio patch: SAVE AS... with its keyboard, then it's in the list
     studio_show_home();
     hx_pump(100);
+    hx_tap(612 + 60, 448 + 20);
+    hx_pump(100);
+    hx_save("studio_2_save_patch");
+    hx_tap(630 + 80, 110 + 24);
+    hx_pump(100);
+    hx_save("studio_3_patch_saved");
+    {
+        char err[64] = "";
+        bool ok = studio_patch_load("PATCH 1", err, sizeof err);
+        printf("patch load: %s %s\n", ok ? "ok" : "FAILED", err);
+    }
     return 0;
 }

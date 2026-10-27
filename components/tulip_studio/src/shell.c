@@ -6,6 +6,7 @@
 // only their screen is off.
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -24,6 +25,8 @@ static bool s_leaving;
 
 // --- switching ----------------------------------------------------------------------
 
+static void build(int i);
+
 static void set_enabled(int i, bool on) {
     if (g_enabled[i] == on) return;
     rt_post(HC_ENABLE, (uint8_t)i, 0, on);
@@ -32,6 +35,12 @@ static void set_enabled(int i, bool on) {
     else
         g_cfg.open_mask &= (uint8_t)~(1u << i);
     cfg_changed();
+}
+
+void shell_set_open(int i, bool on) {
+    if (i < 0 || i >= g_nmods) return;
+    set_enabled(i, on);
+    if (on) build(i);   // its screen polls MIDI / CCs even while hidden
 }
 
 static lv_obj_t *new_screen(void) {
@@ -176,7 +185,13 @@ static struct {
     int meter_px[STUDIO_MAX_MODULES];
     int play_shown, bpm_shown;
     uint32_t mon_seq;
-} H = {.play_shown = -1, .bpm_shown = -1};
+    // patches
+    lv_obj_t *pname, *pmsg, *pdel;
+    char (*plist)[STUDIO_PATCH_NAME + 1];
+    int pn, psel;
+    char pcur[STUDIO_PATCH_NAME + 1];   // the one loaded / saved last
+    bool pdel_armed;
+} H = {.play_shown = -1, .bpm_shown = -1, .psel = -1};
 
 static void h_play(void *ud) { studio_toggle_play(); }
 
@@ -311,6 +326,131 @@ static void h_vol(void *ud) {
 
 static void h_cal(void *ud) { tulip_touchcal_start(NULL); }
 
+// --- Studio patches ------------------------------------------------------------------------
+
+static void patch_say(const char *t) { lv_label_set_text(H.pmsg, t); }
+
+static void patch_disarm(void) {
+    H.pdel_armed = false;
+    sw_btn_text(H.pdel, "DELETE");
+    sw_btn_set(H.pdel, false);
+}
+
+static void patch_show(void) {
+    if (H.pn == 0)
+        lv_label_set_text(H.pname, "-- no patches yet --");
+    else if (H.psel < 0 || H.psel >= H.pn)
+        lv_label_set_text(H.pname, "-- pick one --");
+    else
+        lv_label_set_text_fmt(H.pname, "%d/%d  %s", H.psel + 1, H.pn, H.plist[H.psel]);
+}
+
+// re-read the folder; keep `keep` selected if it's there
+static void patch_rescan(const char *keep) {
+    if (!H.plist) H.plist = malloc(STUDIO_MAX_PATCHES * sizeof H.plist[0]);
+    H.pn = H.plist ? studio_patch_list(H.plist, STUDIO_MAX_PATCHES) : 0;
+    if (keep && keep[0]) {
+        H.psel = -1;
+        for (int i = 0; i < H.pn; i++)
+            if (!strcmp(H.plist[i], keep)) H.psel = i;
+    }
+    if (H.psel >= H.pn) H.psel = H.pn - 1;
+    patch_show();
+}
+
+static void h_pstep(void *ud) {
+    patch_disarm();
+    if (!H.pn) return;
+    H.psel = (H.psel + (int)(intptr_t)ud + H.pn) % H.pn;
+    if (H.psel < 0) H.psel = 0;
+    patch_show();
+}
+
+static void h_pload(void *ud) {
+    patch_disarm();
+    if (H.psel < 0 || H.psel >= H.pn) return patch_say("pick a patch first");
+    char err[64];
+    char nm[STUDIO_PATCH_NAME + 1];
+    snprintf(nm, sizeof nm, "%s", H.plist[H.psel]);
+    if (!studio_patch_load(nm, err, sizeof err)) return patch_say(err);
+    snprintf(H.pcur, sizeof H.pcur, "%s", nm);
+    char t[48];
+    snprintf(t, sizeof t, "loaded %s", nm);
+    patch_say(t);
+    home_refresh();
+    for (int i = 0; i < g_nmods; i++)
+        if (H.fader[i]) sw_slider_refresh(H.fader[i]);
+}
+
+static void patch_saved(const char *name, void *ud) {
+    char t[48];
+    if (!studio_patch_save(name)) {
+        patch_say(studio_files_root() ? "couldn't write the file" : "no /files to save to");
+        return;
+    }
+    snprintf(H.pcur, sizeof H.pcur, "%.*s", STUDIO_PATCH_NAME, name);
+    patch_rescan(H.pcur);
+    snprintf(t, sizeof t, "saved %s", H.pcur);
+    patch_say(t);
+}
+
+static void h_psave_as(void *ud) {
+    patch_disarm();
+    char def[STUDIO_PATCH_NAME + 1];
+    if (H.pcur[0])
+        snprintf(def, sizeof def, "%s", H.pcur);
+    else
+        snprintf(def, sizeof def, "PATCH %d", H.pn + 1);
+    sw_text_entry("SAVE STUDIO PATCH", def, STUDIO_PATCH_NAME, SW_ORANGE, patch_saved, NULL);
+}
+
+// SAVE: over the one picked (or the last one loaded); a new name otherwise
+static void h_psave(void *ud) {
+    patch_disarm();
+    if (H.psel >= 0 && H.psel < H.pn) {
+        char nm[STUDIO_PATCH_NAME + 1];
+        snprintf(nm, sizeof nm, "%s", H.plist[H.psel]);
+        patch_saved(nm, NULL);
+    } else {
+        h_psave_as(NULL);
+    }
+}
+
+static void h_pdel(void *ud) {
+    if (H.psel < 0 || H.psel >= H.pn) return patch_say("pick a patch first");
+    if (!H.pdel_armed) {   // tap twice
+        H.pdel_armed = true;
+        sw_btn_text(H.pdel, "SURE?");
+        sw_btn_set(H.pdel, true);
+        return;
+    }
+    patch_disarm();
+    char t[48];
+    snprintf(t, sizeof t, "%s %s", studio_patch_delete(H.plist[H.psel]) ? "deleted" : "couldn't delete",
+             H.plist[H.psel]);
+    patch_rescan(NULL);
+    patch_say(t);
+}
+
+static void patch_row(lv_obj_t *s, int y) {
+    sw_label(s, "STUDIO PATCH", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
+    sw_label(s, "the whole session in one file: tempo, apps, mixer, routing and every app's "
+                "sounds, patterns and presets",
+             SW_F_SMALL, SW_DIM, 140, y + 2, 0, false);
+    y += 24;
+    sw_btn(s, "<", 14, y, 44, 40, SW_ORANGE, h_pstep, (void *)-1, SW_F_MID);
+    H.pname = sw_label(s, "", SW_F_LABEL, SW_TEXT, 60, y + 11, 280, true);
+    lv_label_set_long_mode(H.pname, LV_LABEL_LONG_CLIP);
+    sw_btn(s, ">", 342, y, 44, 40, SW_ORANGE, h_pstep, (void *)1, SW_F_MID);
+    sw_btn(s, "LOAD", 400, y, 100, 40, SW_ORANGE, h_pload, NULL, NULL);
+    sw_btn(s, "SAVE", 506, y, 100, 40, SW_ORANGE, h_psave, NULL, NULL);
+    sw_btn(s, "SAVE AS...", 612, y, 120, 40, SW_ORANGE, h_psave_as, NULL, NULL);
+    H.pdel = sw_btn(s, "DELETE", 738, y, 100, 40, SW_RED, h_pdel, NULL, NULL);
+    H.pmsg = sw_label(s, "", SW_F_SMALL, SW_DIM, 850, y + 13, 170, false);
+    lv_label_set_long_mode(H.pmsg, LV_LABEL_LONG_CLIP);
+    patch_rescan(NULL);
+}
+
 static void home_create(void) {
     lv_obj_t *s = s_home = new_screen();
     // top bar
@@ -398,6 +538,10 @@ static void home_create(void) {
                                   (void *)(intptr_t)((r << 1) | 1), NULL);
         }
     }
+
+    // Studio patches, under the routing
+    y += ((H.nrows + 1) / 2) * 46 + 4;
+    patch_row(s, y < 540 - 70 ? y : 540 - 70);
 
     // bottom line: volume, load, MIDI monitor, touch calibration
     sw_line(s, 0, 540, 1024, 1);

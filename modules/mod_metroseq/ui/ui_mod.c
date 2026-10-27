@@ -1,11 +1,12 @@
-// ui_mod.c - MOD page: 8 modulation lanes with internal routing.
+// ui_mod.c - MOD page: 8 modulation lanes with internal routing, and each
+// lane's value out as a MIDI CC.
 #include <stdio.h>
 
 #include "ui_common.h"
 
 #define MOD_SLIDER_H SLIDER_H
 
-enum { C_ORDER, C_LEN, C_DIV, C_DEPTH, C_DEST, C_COUNT };
+enum { C_ORDER, C_LEN, C_DIV, C_DEPTH, C_DEST, C_CC, C_CCCH, C_COUNT };
 
 static lv_obj_t *s_panel;
 static ui_btn_t *s_lane_btns[NUM_MOD_LANES];
@@ -25,7 +26,7 @@ void mod_page_refresh(void) {
         const mod_lane_cfg_t *la = &g_pat.mods[i];
         if (i == s_sel)
             ui_btn_set_color(s_lane_btns[i], C_SEL);
-        else if (la->dest != 0 && la->depth > 0)
+        else if ((la->dest != 0 && la->depth > 0) || g_pat.lane_cc[i])
             ui_btn_set_color(s_lane_btns[i], C_BTN);
         else
             ui_btn_set_color(s_lane_btns[i], C_BTN_DK);
@@ -39,6 +40,12 @@ void mod_page_refresh(void) {
     lv_label_set_text(s_ctrl_vals[C_DIV], DIV_NAMES[ln->div_i]);
     lv_label_set_text_fmt(s_ctrl_vals[C_DEPTH], "%d%%", ln->depth);
     lv_label_set_text(s_ctrl_vals[C_DEST], DEST_NAMES[ln->dest]);
+    int cc = g_pat.lane_cc[s_sel];
+    if (cc)
+        lv_label_set_text_fmt(s_ctrl_vals[C_CC], "CC %d", cc);
+    else
+        lv_label_set_text(s_ctrl_vals[C_CC], "OFF");
+    lv_label_set_text_fmt(s_ctrl_vals[C_CCCH], "CH %d", g_pat.lane_cc_ch[s_sel]);
 }
 
 static void select_lane(intptr_t i) {
@@ -64,20 +71,24 @@ static void step(intptr_t arg) {
     case C_DIV: ln->div_i = clampi(ln->div_i + d, 0, NUM_DIVS - 1); break;
     case C_DEPTH: ln->depth = clampi(ln->depth + 5 * d, 0, 100); break;
     case C_DEST: ln->dest = pmod(ln->dest + d, NUM_DESTS); break;
+    case C_CC: g_pat.lane_cc[s_sel] = clampi(g_pat.lane_cc[s_sel] + d, 0, 127); break;
+    case C_CCCH: g_pat.lane_cc_ch[s_sel] = pmod(g_pat.lane_cc_ch[s_sel] - 1 + d, 16) + 1; break;
     }
     mod_page_refresh();
 }
 
-static void ctrl(int x, int y, const char *name, int which) {
-    ui_label(s_panel, name, x, y + 8);
-    ui_btn(s_panel, "-", x + 110, 40, 40, step, which * 2, C_BTN, y, NULL);
-    // centred in the 50 px between the buttons so "BRWN" / "1/16" fit
-    lv_obj_t *v = s_ctrl_vals[which] = ui_label(s_panel, "", x + 150, y + 10);
-    lv_obj_set_width(v, 50);
+// label, then "-" value "+" (vw: the value's width); hold to repeat
+static void ctrl_w(int x, int y, const char *name, int which, int vw) {
+    ui_label(s_panel, name, x, y + 11);
+    ui_btn(s_panel, "-", x + 96, 44, 38, step, which * 2, C_BTN, y, step);
+    lv_obj_t *v = s_ctrl_vals[which] = ui_label(s_panel, "", x + 140, y + 11);
+    lv_obj_set_width(v, vw);
     lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
-    ui_btn(s_panel, "+", x + 200, 40, 40, step, which * 2 + 1, C_BTN, y, NULL);
+    lv_label_set_long_mode(v, LV_LABEL_LONG_CLIP);
+    ui_btn(s_panel, "+", x + 140 + vw, 44, 38, step, which * 2 + 1, C_BTN, y, step);
 }
+
+static void ctrl(int x, int y, const char *name, int which) { ctrl_w(x, y, name, which, 110); }
 
 void mod_page_light(int stage, bool on) {
     ui_led_set(s_leds[stage], on ? C_ACCENT : C_LED_OFF);
@@ -120,16 +131,19 @@ void mod_page_create(lv_obj_t *parent) {
         lv_obj_remove_flag(zero, LV_OBJ_FLAG_CLICKABLE);
         s_val_lbls[i] = ui_label(s_panel, "0", slx - 6, sy + 16 + MOD_SLIDER_H + 4);
     }
-    int cy = sy + 16 + MOD_SLIDER_H + 40;
-    ctrl(20, cy, "Order", C_ORDER);
-    ctrl(270, cy, "Length", C_LEN);
-    ctrl(520, cy, "Clock div", C_DIV);
-    int cy2 = cy + 54;
-    ctrl(20, cy2, "Depth", C_DEPTH);
-    // destination gets a wider value field
-    ui_label(s_panel, "Route to", 270, cy2 + 8);
-    ui_btn(s_panel, "-", 400, 46, 40, step, C_DEST * 2, C_BTN, cy2, NULL);
-    s_ctrl_vals[C_DEST] = ui_label(s_panel, "OFF", 460, cy2 + 8);
-    ui_btn(s_panel, "+", 640, 46, 40, step, C_DEST * 2 + 1, C_BTN, cy2, NULL);
+    // three columns of the same "-" value "+" rows
+    const int cx[3] = {SEQ_X0, SEQ_X0 + 330, SEQ_X0 + 660};
+    int cy = sy + 16 + MOD_SLIDER_H + 36;
+    ctrl(cx[0], cy, "Order", C_ORDER);
+    ctrl(cx[1], cy, "Length", C_LEN);
+    ctrl(cx[2], cy, "Clock div", C_DIV);
+    int cy2 = cy + 48;
+    ctrl(cx[0], cy2, "Depth", C_DEPTH);
+    ctrl(cx[1], cy2, "Route to", C_DEST);
+    int cy3 = cy2 + 48;
+    ctrl(cx[0], cy3, "MIDI CC", C_CC);
+    ctrl(cx[1], cy3, "CC channel", C_CCCH);
+    lv_obj_t *h = ui_label(s_panel, "the lane's value 0-127,\nsent as it steps", cx[2], cy3 + 2);
+    lv_obj_set_style_text_color(h, c332(C_DIM), 0);
     mod_page_refresh();
 }

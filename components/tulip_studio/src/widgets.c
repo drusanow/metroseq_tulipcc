@@ -235,3 +235,100 @@ sw_slider_t *sw_slider(lv_obj_t *parent, const char *label, int x, int y, int w,
     slider_draw(s);
     return s;
 }
+
+// --- name entry ------------------------------------------------------------------------
+
+static struct {
+    lv_obj_t *d, *ta, *msg;
+    sw_text_cb_t cb;
+    void *ud;
+    int max;
+} T;
+
+static void entry_close(void) {
+    if (!T.d) return;
+    lv_obj_delete_async(T.d);
+    T.d = NULL;
+}
+
+// printable ASCII, trimmed
+static void entry_clean(const char *in, char *out, int len) {
+    int n = 0;
+    while (*in == ' ') in++;
+    for (; *in && n < len - 1; in++) out[n++] = (*in >= 32 && *in < 127) ? *in : '?';
+    while (n > 0 && out[n - 1] == ' ') n--;
+    out[n] = 0;
+}
+
+static void entry_ok(void *ud) {
+    if (!T.d) return;
+    char nm[64];
+    entry_clean(lv_textarea_get_text(T.ta), nm, T.max + 1 < (int)sizeof nm ? T.max + 1 : (int)sizeof nm);
+    if (!nm[0]) {
+        lv_label_set_text(T.msg, "give it a name");
+        return;
+    }
+    sw_text_cb_t cb = T.cb;
+    void *u = T.ud;
+    entry_close();
+    if (cb) cb(nm, u);
+}
+
+static void entry_cancel(void *ud) { entry_close(); }
+
+static void entry_kb(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_READY)
+        entry_ok(NULL);
+    else
+        entry_close();
+}
+
+void sw_text_entry(const char *title, const char *text, int max, uint32_t accent, sw_text_cb_t cb,
+                   void *ud) {
+    entry_close();
+    T.cb = cb;
+    T.ud = ud;
+    T.max = max > 0 && max < 63 ? max : 63;
+    lv_obj_t *d = T.d = sw_plain(lv_obj_create(lv_layer_top()), SW_BG, 0);
+    lv_obj_set_size(d, 1024, 600);
+    lv_obj_set_pos(d, 0, 0);
+    lv_obj_add_flag(d, LV_OBJ_FLAG_CLICKABLE);   // nothing under it takes a tap
+    sw_label(d, title, SW_F_BIG, accent, 0, 14, 1024, true);
+    sw_label(d, "NAME", SW_F_MID, SW_TEXT, 60, 122, 0, false);
+    lv_obj_t *ta = T.ta = lv_textarea_create(d);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, T.max);
+    lv_textarea_set_text(ta, text ? text : "");
+    lv_obj_set_pos(ta, 150, 110);
+    lv_obj_set_size(ta, 460, 48);
+    lv_obj_set_style_text_font(ta, SW_F_MID, 0);
+    lv_obj_set_style_bg_color(ta, sw_c(SW_BG), 0);
+    lv_obj_set_style_text_color(ta, sw_c(SW_TEXT), 0);
+    lv_obj_set_style_border_color(ta, sw_c(SW_EDGE), 0);
+    lv_obj_set_style_border_width(ta, 1, 0);
+    lv_obj_set_style_radius(ta, 0, 0);
+    sw_btn_set(sw_btn(d, "SAVE", 630, 110, 160, 48, accent, entry_ok, NULL, SW_F_MID), true);
+    sw_btn(d, "CANCEL", 800, 110, 160, 48, SW_RED, entry_cancel, NULL, SW_F_MID);
+    T.msg = sw_label(d, "", SW_F_LABEL, SW_RED, 150, 170, 0, false);
+    lv_obj_t *kb = lv_keyboard_create(d);
+    lv_obj_set_size(kb, 1024, 300);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_add_event_cb(kb, entry_kb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(kb, entry_kb, LV_EVENT_CANCEL, NULL);
+    // black keys with thin outlines, like the buttons
+    lv_obj_set_style_bg_color(kb, sw_c(SW_BG), 0);
+    lv_obj_set_style_border_width(kb, 0, 0);
+    lv_obj_set_style_radius(kb, 0, 0);
+    lv_obj_set_style_bg_color(kb, sw_c(SW_BG), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(kb, sw_c(SW_EDGE), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(kb, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, sw_c(SW_TEXT), LV_PART_ITEMS);
+    lv_obj_set_style_text_font(kb, SW_F_MID, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, sw_c(accent), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(kb, sw_c(0x242424), LV_PART_ITEMS | LV_STATE_CHECKED);
+}
+
+bool sw_text_entry_open(void) { return T.d != NULL; }

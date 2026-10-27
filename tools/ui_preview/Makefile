@@ -13,8 +13,8 @@ BASE = -O1 -g -w -std=gnu11 -DLV_CONF_INCLUDE_SIMPLE -Ibuild -Istub -I$(LVGL) -I
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
 HAL_UI = $(HAL)/src/touch_cal.c $(HAL)/src/touchcal_ui.c harness.c
 
-ST_SRC = studio_preview.c studio_stubs.c $(ST)/src/shell.c $(ST)/src/widgets.c $(ST)/src/studio.c \
-         $(ST)/src/tclock.c $(wildcard $(MS)/ui/*.c) $(MS)/engine/seq_model.c \
+ST_SRC = studio_preview.c studio_stubs.c $(ST)/src/shell.c $(ST)/src/widgets.c $(ST)/src/studio.c $(ST)/src/patch.c \
+         $(ST)/src/tclock.c $(wildcard $(MS)/ui/*.c) $(MS)/engine/seq_model.c $(MS)/engine/seq_json.c \
          $(wildcard $(GXM)/core/*.c) $(GXM)/gx_mod.c $(wildcard $(GXM)/ui/*.c) \
          $(SLM)/sloe_dsp.c $(SLM)/sloe_mod.c $(CJ)/cJSON.c $(HAL_UI) \
          $(wildcard $(WTM)/core/*.c) $(WTM)/wt_mod.c $(wildcard $(WTM)/ui/*.c)

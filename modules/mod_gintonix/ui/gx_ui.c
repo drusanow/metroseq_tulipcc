@@ -370,8 +370,37 @@ static void apply_state(const gx_state_t *s, const char *name, int slot) {
     snprintf(A.patch_name, sizeof A.patch_name, "%s", name);
     A.source_slot = slot;
     A.dirty = false;
-    refresh_all();
+    if (A.scr) refresh_all();
     A.status_dirty = true;
+}
+
+// --- Studio patches: the kit with its patterns, as the bank saves it --------------------------
+
+cJSON *gx_patch_save(void) {
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "name", A.patch_name);
+    cJSON_AddNumberToObject(o, "slot", A.source_slot);
+    cJSON_AddNumberToObject(o, "midi_ch", g_gxset.midi_ch);
+    g_gx.tempo = studio_bpm_x100() / 100.0f;
+    cJSON_AddItemToObject(o, "state", gx_json_state(&g_gx));
+    return o;
+}
+
+void gx_patch_load(const cJSON *o) {
+    const cJSON *st = cJSON_GetObjectItemCaseSensitive(o, "state");
+    if (!cJSON_IsObject(st)) return;
+    s_tmp.tempo = studio_bpm_x100() / 100.0f;
+    gx_json_to_state(st, &s_tmp, true);   // the tempo is the Studio patch's
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, "midi_ch");
+    if (cJSON_IsNumber(v) && v->valueint >= -1 && v->valueint <= 16) {
+        g_gxset.midi_ch = (int8_t)v->valueint;
+        gx_settings_save();
+    }
+    v = cJSON_GetObjectItemCaseSensitive(o, "name");
+    const cJSON *sl = cJSON_GetObjectItemCaseSensitive(o, "slot");
+    int slot = cJSON_IsNumber(sl) && sl->valueint >= 0 && sl->valueint <= GX_BANK_SLOTS ? sl->valueint : 0;
+    apply_state(&s_tmp, cJSON_IsString(v) ? v->valuestring : "", slot);
+    if (A.scr) header_slot_ui();
 }
 
 void load_kit(int i) {

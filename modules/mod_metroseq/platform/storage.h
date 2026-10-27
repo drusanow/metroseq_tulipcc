@@ -1,4 +1,4 @@
-// storage.h - PRESETS (16 numbered slots) and named PROJECTS.
+// storage.h - PRESETS (10 numbered slots) and named PROJECTS.
 //
 // The Python kept these as JSON in /user; here they are versioned binary
 // blobs in NVS (power-fail safe, wear levelled). The bank lives in RAM -
@@ -18,6 +18,10 @@ void storage_init(void);
 bool storage_preset_used(int slot);
 bool storage_preset_get(int slot, pattern_t *out);
 void storage_preset_save(int slot, const pattern_t *p);
+void storage_preset_clear(int slot);
+// The slot being played and edited (-1 = none yet); kept across power-off.
+int storage_cur_preset(void);
+void storage_set_cur_preset(int slot);
 
 // Projects (UI task only)
 int storage_project_count(void);

@@ -72,6 +72,7 @@ typedef enum {
     ACT_PITCH,        // out = physical output, value = pitch in cents (midi*100)
     ACT_AUDIO_ON,     // out = track, value = midi note, arg = slide time (us, 0 = none)
     ACT_AUDIO_OFF,    // out = track
+    ACT_CC,           // out = mod lane, value = 0..127 (its CC and channel are in the pattern)
 } seq_act_type_t;
 
 typedef struct {
@@ -133,6 +134,7 @@ typedef struct {
     int8_t   pdir;
     uint32_t next16;
     int8_t   disp_stage;
+    int16_t  last_cc;       // the CC value last sent
 } lane_rt_t;
 
 typedef struct {
@@ -213,6 +215,12 @@ void seq_engine_locate(seq_engine_t *e, int64_t now, uint32_t pulses);
 
 // Process everything due at or before `now` (+lookahead).
 void seq_engine_advance(seq_engine_t *e, int64_t now, seq_actions_t *out);
+
+// True when the next master pulse starts TRK 1's sequence over: it enters
+// the stage PLAY would start on. RAND and BROWN have no start, so for them
+// (and a track with every stage skipped) it's the next bar instead. A new
+// pattern waits for this, so it comes in on the top of the sequence.
+bool seq_engine_top_next(const seq_engine_t *e);
 
 // Absolute time of the next thing that needs doing (INT64_MAX if idle).
 int64_t seq_engine_next_due(const seq_engine_t *e);

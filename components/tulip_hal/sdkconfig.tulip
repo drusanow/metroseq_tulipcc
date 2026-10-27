@@ -69,3 +69,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # share: 32 KB (not 16) keeps the UI and the audio from evicting each other
 # (the launcher sets it back to 16 KB: it has no audio and less RAM to spare)
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+
+# /files: long file names, as the launcher has them. Without these an app
+# sees 8.3 names only, and can't create gintonic_bank/, wt_patches.json,
+# wavetables/ or studio/patches/ files.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_API_ENCODING_UTF_8=y

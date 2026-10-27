@@ -16,7 +16,7 @@
 #define SEQ_X0      34
 #define COL_W       122
 #define COL_INNER   108
-#define SLIDER_H    250
+#define SLIDER_H    230
 #define SLIDER_W    20
 
 // --- palette: the Studio look (studio/widgets.h), as RGB332 bytes ----------
@@ -121,4 +121,13 @@ void set_page_poll(void);
 
 void save_popup_create(lv_obj_t *parent);
 void save_popup_show(void);
+
+// ui_preset.c: the 10 presets under the SEQ tracks. The current one keeps
+// every change; another comes in on the top of TRK 1's sequence.
+void preset_row_create(lv_obj_t *parent, int y);
+void preset_init(void);           // at start: the last preset played
+void preset_poll(void);           // every UI pass, shown or not
+void preset_after_load(void);     // the pattern was replaced (a project, a Studio patch)
+int preset_current(void);
+void preset_set_current(int slot);   // a Studio patch: this slot, no waiting
 

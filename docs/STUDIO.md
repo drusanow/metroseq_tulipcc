@@ -51,6 +51,7 @@ From the launcher, tap **studio**.
   * **MIDI OUT:** on a channel you choose, which defaults to the track number.
 * **MIDI IN:** which app listens to what. Notes and CCs go to each app on its own
   channel.
+* **STUDIO PATCH:** the whole session in one file (see below).
 * **Bottom bar:**
   * master volume;
   * audio load and underrun count;
@@ -59,6 +60,30 @@ From the launcher, tap **studio**.
 
 Everything here (tempo, clock, routes, open apps, the last screen shown) is saved and
 comes back the next time you open Studio.
+
+### Studio patches
+
+A Studio patch is everything at once, saved as one JSON file you can load later:
+
+* the tempo and master volume;
+* which apps are open, and each app's mixer level and mute;
+* the routing of every sequencer track (to a synth, or MIDI OUT and its channel);
+* each app's own state:
+  * **metroseq:** the pattern, all 10 presets and the one playing, the preview on/off;
+  * **GinTonix:** the kit with its 12 patterns (what the bank's SAVE writes), and its
+    MIDI channel;
+  * **Sloe:** the sound, its preset name and its MIDI channel;
+  * **Wavetron:** the sound (its wavetables by path, as its own patches do), its name
+    and its MIDI channel.
+
+On the home page: `<` `>` pick a patch, **LOAD** loads it, **SAVE** writes over the one
+picked, **SAVE AS...** asks for a name, and **DELETE** (tap twice) removes it.
+
+The files are `/files/studio/patches/<name>.json`, indented so you can read them, and the
+launcher's Wi-Fi page can copy them on and off. Apps are found by name, so a patch from
+one Studio image loads in another: an app it doesn't know is skipped, and keys that are
+missing keep their defaults. The clock source and touch calibration belong to the
+Tulip, not the patch.
 
 ### The two ways to set it up that you asked about
 
@@ -198,6 +223,8 @@ tmod_t mod_mine = {
     .midi = midi,                // MIDI IN channel messages (midi task): queue them
     .ui_create = ui_create,      // build your screen on the lv_obj_t given
     .ui_poll = ui_poll,          // every UI pass (visible or not)
+    .patch_save = patch_save,    // Studio patches: your state as a cJSON object...
+    .patch_load = patch_load,    // ...and back (even before your screen is built)
 };
 ```
 

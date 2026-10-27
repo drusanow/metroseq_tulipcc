@@ -18,9 +18,9 @@ HDR = $(wildcard $(ENGINE)/*.h)
 
 all: build/test_engine build/test_midi_touch build/test_launcher build/test_studio build/test_gx build/gx_tool build/test_sloe build/test_wavetron build/sim
 
-build/test_engine: test_engine.c $(SRC) $(HDR)
+build/test_engine: test_engine.c $(SRC) $(HDR) $(ENGINE)/seq_json.c
 	@mkdir -p build
-	$(CC) $(CFLAGS) -o $@ test_engine.c $(SRC) -lm
+	$(CC) $(CFLAGS) -I$(CJSON) -o $@ test_engine.c $(SRC) $(ENGINE)/seq_json.c $(CJSON)/cJSON.c -lm
 
 build/test_midi_touch: test_midi_touch.c $(SRC) $(HDR)
 	@mkdir -p build
