@@ -1,0 +1,9 @@
+# Wavetron's audio path runs from internal RAM. The apps execute from PSRAM
+# through a cache both cores share: while the screen redraws, the UI code on
+# core 0 pushes the audio code out of it, and the audio task on core 1
+# stalls refetching its own instructions - crackle whenever a page changed.
+[mapping:mod_wavetron]
+archive: libmod_wavetron.a
+entries:
+    wt_dsp (noflash)
+    wt_fx (noflash)

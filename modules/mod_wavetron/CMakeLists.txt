@@ -4,6 +4,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     PRIV_INCLUDE_DIRS "core" "ui"
     REQUIRES tulip_studio lvgl json
+    LDFRAGMENTS "linker.lf"
 )
 # the audio path: optimise for speed
 set_source_files_properties(core/wt_dsp.c core/wt_fx.c core/wt_tables.c

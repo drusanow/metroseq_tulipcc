@@ -9,6 +9,7 @@ idf_component_register(
         "src/tclock.c"
         "src/widgets.c"
     INCLUDE_DIRS "include"
+    LDFRAGMENTS "linker.lf"
     REQUIRES lvgl tulip_hal esp_driver_i2c
     PRIV_REQUIRES esp_driver_gptimer esp_driver_i2s esp_driver_uart esp_driver_gpio nvs_flash
                   esp_app_format freertos

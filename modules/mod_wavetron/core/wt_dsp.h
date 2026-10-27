@@ -25,7 +25,7 @@
 
 #define WT_NV 4
 #define WT_SR 44100.0f
-#define WT_CR 16              // control rate: envelopes, LFOs, matrix every 16 frames
+#define WT_CR 32              // control rate: envelopes, LFOs, matrix every 32 frames (0.7 ms)
 #define WT_HELD 16
 #define WT_SCOPE 512
 
@@ -85,6 +85,10 @@ typedef struct {
     } route[WT_NMOD * WT_NDEST];   // the matrix's live routings, listed once
     int nroute;
     uint32_t quiet;           // frames of silence (render skips while idle)
+    // the engine works in whole control periods; what's left of the last
+    // one waits here for the next call
+    float ol[WT_CR], or_[WT_CR];
+    int oleft;
     wt_fx_t fx;
     float scope[WT_SCOPE];    // the last output (mono), for the display
     uint32_t scope_w;

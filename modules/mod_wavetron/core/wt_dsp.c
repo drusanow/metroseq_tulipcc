@@ -365,6 +365,7 @@ void wt_panic(wt_engine_t *e) {
         memset(vo->ap, 0, sizeof vo->ap);
     }
     wt_fx_clear(&e->fx);
+    e->oleft = 0;   // drop what was left of the last period
 }
 
 // --- one voice --------------------------------------------------------------------------------------------
@@ -637,8 +638,24 @@ static void voice_run(wt_engine_t *e, int v, const vctl_t *c, float *l, float *r
 #define IDLE_FRAMES (WT_SR / 4)
 #define IDLE_LEVEL 1e-5f
 
+// One control period (WT_CR frames) of every voice, through the effects.
+// Envelopes, glide and the amp ramps step by exactly WT_CR frames, so the
+// period is never split, whatever block size the caller uses.
+static void period(wt_engine_t *e, float g) {
+    float *bl = e->ol, *br = e->or_;
+    memset(bl, 0, sizeof e->ol);
+    memset(br, 0, sizeof e->or_);
+    for (int v = 0; v < WT_NV; v++) {
+        if (!e->v[v].active) continue;
+        vctl_t c;
+        control(e, v, &c);
+        voice_run(e, v, &c, bl, br, WT_CR);
+    }
+    for (int i = 0; i < WT_CR; i++) bl[i] *= g, br[i] *= g;
+    wt_fx_process(&e->fx, bl, br, WT_CR);
+}
+
 void wt_render(wt_engine_t *e, float *l, float *r, int n) {
-    static float bl[WT_CR * 4], br[WT_CR * 4];
     if (!e->wa.data || !e->wb.data) return;
     bool any = false;
     for (int v = 0; v < WT_NV; v++) any |= e->v[v].active;
@@ -654,21 +671,12 @@ void wt_render(wt_engine_t *e, float *l, float *r, int n) {
     float g = e->s.p[WP_VOL] * OUT_GAIN;
     int done = 0;
     while (done < n) {
-        int m = n - done;
-        if (m > (int)(sizeof bl / sizeof bl[0])) m = sizeof bl / sizeof bl[0];
-        memset(bl, 0, m * sizeof(float));
-        memset(br, 0, m * sizeof(float));
-        for (int at = 0; at < m; at += WT_CR) {
-            int k = m - at < WT_CR ? m - at : WT_CR;
-            for (int v = 0; v < WT_NV; v++) {
-                if (!e->v[v].active) continue;
-                vctl_t c;
-                control(e, v, &c);
-                voice_run(e, v, &c, bl + at, br + at, k);
-            }
+        if (e->oleft == 0) {
+            period(e, g);
+            e->oleft = WT_CR;
         }
-        for (int i = 0; i < m; i++) bl[i] *= g, br[i] *= g;
-        wt_fx_process(&e->fx, bl, br, m);
+        int m = n - done < e->oleft ? n - done : e->oleft;
+        const float *bl = e->ol + WT_CR - e->oleft, *br = e->or_ + WT_CR - e->oleft;
         float pk = 0;
         for (int i = 0; i < m; i++) {
             l[done + i] += bl[i];
@@ -677,12 +685,14 @@ void wt_render(wt_engine_t *e, float *l, float *r, int n) {
             e->scope[e->scope_w++ % WT_SCOPE] = x;
             pk = fmaxf(pk, fmaxf(fabsf(bl[i]), fabsf(br[i])));
         }
+        e->oleft -= m;
         done += m;
         if (any || pk > IDLE_LEVEL) {
             e->quiet = 0;
         } else if ((e->quiet += m) >= IDLE_FRAMES) {
             // gone quiet (what's left of the tails is below -100 dB): stop
             memset(e->scope, 0, sizeof e->scope);
+            e->oleft = 0;
             return;
         }
     }

@@ -87,6 +87,15 @@ A SLIDE stage glides.
 
 Four apps share one audio core, and the panel shares the PSRAM bus with everything. So:
 
+* **The audio code runs from internal RAM, not PSRAM.** The apps' code normally sits in
+  PSRAM and runs through a small instruction cache shared by both cores. Redrawing the
+  screen on one core pushed the audio code out of that cache, and the audio core then
+  stalled while it was fetched again from PSRAM. That's why changing settings in any app
+  crackled. Wavetron's engine and effects, GinTonix's engine and sequencer, metroseq's
+  preview voice and the Studio mixer are now linked into internal RAM (each module's
+  `linker.lf`), so the screen can't evict them. The instruction cache is also 32 KB
+  instead of 16 KB for the rest of the code.
+
 * **Silent costs nothing.** Once no voice is sounding and every echo and reverb tail is
   below -100 dB, Wavetron stops rendering until the next note.
 * **The waterfall redraws only when it changes:** when the table or POSITION changes. The
@@ -94,9 +103,11 @@ Four apps share one audio core, and the panel shares the PSRAM bus with everythi
   used to be a second line that redrew the whole picture 20 times a second.
 * **The reverb and chorus lines are in internal RAM** (16-bit, about 30 KB). The reverb is
   4 combs + 2 all-passes per side (Freeverb uses twice that).
-* **Per-voice coefficients are worked out when something changes,** not every 16 samples:
+* **Per-voice coefficients are worked out when something changes,** not every control period:
   the envelopes, filter and pan. Fast exponentials replace the C library's `powf` /
   `expf` / `tanf` in the audio path.
+* **The control rate is every 32 samples (0.7 ms)**: envelopes, LFOs and the matrix
+  step there, and the oscillators and filters run per sample in between.
 * **The scope runs at 10 Hz, and the voices display only redraws when a note changes.**
 
 ## What's different from the sketch, and why

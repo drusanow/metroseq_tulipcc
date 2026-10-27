@@ -64,3 +64,8 @@ CONFIG_I2S_ISR_IRAM_SAFE=y
 # app_main does real work at start-up (the launcher's first-start storage
 # set-up, the apps' modules loading their files): 8 KB, not the default 3.5
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# The apps execute from PSRAM through the instruction cache both cores
+# share: 32 KB (not 16) keeps the UI and the audio from evicting each other
+# (the launcher sets it back to 16 KB: it has no audio and less RAM to spare)
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y

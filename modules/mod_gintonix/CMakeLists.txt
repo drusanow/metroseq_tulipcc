@@ -15,6 +15,7 @@ idf_component_register(
         "ui/gx_ui.c"
         "ui/gx_widgets.c"
     INCLUDE_DIRS "."
+    LDFRAGMENTS "linker.lf"
     PRIV_INCLUDE_DIRS "core" "ui"
     REQUIRES tulip_studio lvgl json
     PRIV_REQUIRES esp_timer

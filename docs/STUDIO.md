@@ -149,8 +149,12 @@ of the I2C bus. Touch is read only in gaps longer than a worst-case touch read.
   gates.
 * **Mix and DSP load:**
   * The mix is limited with a soft knee above −2 dB.
-  * GinTonix's voices render from internal RAM (`IRAM_ATTR`), not through the PSRAM
-    cache.
+  * The whole audio path renders from internal RAM, not through the PSRAM cache: the
+    Studio mixer, GinTonix's engine and sequencer, Sloe's voices, Wavetron's engine and
+    effects, and metroseq's preview voice (`IRAM_ATTR`, or the module's `linker.lf`).
+    Otherwise redrawing the screen on core 0 evicts the audio code from the shared
+    instruction cache, and every setting change crackles. The instruction cache is
+    32 KB in the apps (16 KB in the launcher).
   * On the host, 8 drum voices take about 1 % of one core. On the ESP32-S3 my estimate
     is 10–25 %; the home page shows the real figure (AUDIO %).
 

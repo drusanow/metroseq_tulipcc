@@ -1,0 +1,6 @@
+# The audio task's mixer runs from internal RAM, out of the UI's way (see
+# modules/mod_wavetron/linker.lf).
+[mapping:tulip_studio]
+archive: libtulip_studio.a
+entries:
+    audio (noflash)
