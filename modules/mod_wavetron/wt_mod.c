@@ -57,6 +57,13 @@ static void *psram_alloc(unsigned n) {
     void *p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     return p ? p : heap_caps_malloc(n, MALLOC_CAP_8BIT);
 }
+
+// the reverb and chorus lines are read every sample: internal RAM (about
+// 30 KB), so the audio task leaves the PSRAM bus to the panel
+static void *fast_alloc(unsigned n) {
+    void *p = heap_caps_malloc(n, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    return p ? p : psram_alloc(n);
+}
 #endif
 
 #define NRETIRE 8
@@ -447,6 +454,7 @@ static void enable(bool on, int64_t now) {
 static void init(void) {
 #ifdef ESP_PLATFORM
     wt_alloc = psram_alloc;
+    wt_alloc_fast = fast_alloc;
     wt_free = heap_caps_free;
 #endif
     s_q = xQueueCreate(64, sizeof(tnote_t));

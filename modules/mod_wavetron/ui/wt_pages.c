@@ -74,7 +74,7 @@ static void osc_column(lv_obj_t *p, int osc) {
     wb_slider(p, b + 4, x0, 398, 244, col);
     wb_slider(p, b + 6, x0 + 256, 398, 244, col);
     wb_toggle(p, b + 5, "FOLD", x0, 452, 120, 38, col);
-    sw_label(p, "white: POSITION   colour: the playing voice", SW_F_SMALL, C_DIM, x0 + 132, 463,
+    sw_label(p, "white: POSITION   bar: where the voice plays", SW_F_SMALL, C_DIM, x0 + 132, 463,
              370, false);
 }
 

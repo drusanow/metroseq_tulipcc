@@ -27,14 +27,15 @@ produces. It is built on the shared Tulip base (`components/tulip_hal`) and kept
 
 ```
  32 MB flash
- ┌──────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────┐
- │ factory  │ ota_0   │ ota_1   │ ota_2   │ ota_3   │ storage (FAT)        │
- │ launcher │ app     │ app     │ app     │ app     │ /files ~16.7 MB      │
- │ 3 MB     │ slot    │ slot    │ slot    │ slot    │  /files/apps/*.bin   │
- └──────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────┘
+ ┌──────────┬───────┬───────┬───────┬───────┬───────┬───────┬──────────────────────┐
+ │ factory  │ ota_0 │ ota_1 │ ota_2 │ ota_3 │ ota_4 │ ota_5 │ storage (FAT)        │
+ │ launcher │ app   │ app   │ app   │ app   │ app   │ app   │ /files ~16.7 MB      │
+ │ 2 MB     │ slot  │ slot  │ slot  │ slot  │ slot  │ slot  │  /files/apps/*.bin   │
+ └──────────┴───────┴───────┴───────┴───────┴───────┴───────┴──────────────────────┘
+   (2 MB each)                                            at 0xF50000, as before
 ```
 
-**Launching.** When you launch an app, the launcher checks whether one of the four
+**Launching.** When you launch an app, the launcher checks whether one of the six
 **app slots** already holds that exact build (matched on the ELF SHA-256 the build
 embeds, plus size).
 * If it does, the launcher reboots straight into that slot. That takes about 1–2 s.
@@ -86,7 +87,7 @@ and `gintonix` on their own. The other approaches I considered:
    XIP from PSRAM. Use the device partition table. `apps/hello` shows the 10-line setup.
 2. Call `tulip_app_init()` at the top of `app_main()`, and give the user a way home:
    `tulip_exit_to_launcher()`.
-3. Fit in 3 MB (studio, with three apps, is 0.89 MB; the hello app 0.57 MB).
+3. Fit in 2 MB (studio, with four apps, is 0.95 MB; the hello app 0.57 MB).
 4. **Don't `idf.py flash` an app.** That would overwrite the launcher. Push it instead
    (below).
 
@@ -177,7 +178,8 @@ shows `http://tulip.local`, the IP address, and a 4-digit **PIN**. HOME shows th
 
 Flash `tulip-full.bin` once over USB (`esptool.py --chip esp32s3 write_flash 0x0
 tulip-full.bin`). It contains the bootloader, the partition table, the launcher, and
-**studio, metroseq, gintonix and sloe preloaded** in slots 1–4. On first boot the launcher
+**studio, metroseq, gintonix, sloe and wavetron preloaded** in slots 1–5 (slot 6 is free).
+On first boot the launcher
 formats `/files`, then copies them into `/files/apps`, so they show up straight away.
 This takes up to a minute; the screen shows its progress.
 After that, apps only ever arrive over Wi-Fi or USB serial.
@@ -187,6 +189,11 @@ After that, apps only ever arrive over Wi-Fi or USB serial.
 > `tulip-full-XXX.bin` at 0x0.
 
 Build the image yourself with `tools/make_full_image.sh`.
+
+**Updating from the 4-slot layout** (images before Wavetron was preloaded): flashing the
+new `tulip-full.bin` keeps `/files` - the storage partition has the same place and size.
+The launcher sees the new slots on its first start and copies the five apps into
+`/files/apps` again (replacing the older copies).
 
 ## 7. Threads and cores
 
@@ -202,7 +209,7 @@ display doesn't stutter during transfers.
 
 Verified here without hardware:
 * **Builds:** launcher, metroseq and hello all build with no warnings. The launcher is
-  1.33 MB of its 3 MB slot.
+  1.33 MB of its 2 MB slot.
 * **Launcher logic (host tests):** path safety (escapes, bad names, truncation), app
   image parsing (including the real `metroseq.bin`), and slot selection.
 * **Transfer (end-to-end):** `tools/tulip.py` and the web app in headless Chromium,

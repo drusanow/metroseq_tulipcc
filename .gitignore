@@ -14,4 +14,3 @@ __pycache__/
 metroseq-*.bin
 tulip-*.bin
 **/build.log
-/wavetron.bin

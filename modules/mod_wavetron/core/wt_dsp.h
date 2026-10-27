@@ -31,8 +31,18 @@
 
 typedef struct {
     uint8_t st;               // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
-    float v, rel0;
+    float v, rk;              // value; the release's step (set at note off)
 } wt_env_t;
+
+// An envelope's per-step coefficients, worked out once when the sound
+// changes (not every 16 frames per voice).
+typedef struct {
+    uint8_t curve;
+    bool a_now;               // attack 0: jump to 1
+    float a_inc, a_tgt, a_k, a_mul;
+    float d_inc, d_k, d_mul;
+    float s, r_s, r_k;        // sustain; release time (s); RC release multiplier
+} wt_egc_t;
 
 typedef struct {
     bool gate, active;
@@ -46,6 +56,9 @@ typedef struct {
     float s1a, s1b, s2a, s2b; // filter (two SVF stages)
     float ap[4], apfb;        // phaser
     float pos_a, pos_b;       // live positions (the display)
+    // filter / pan coefficients, kept while the cutoff and pan hold still
+    float fc_c, k_c, g, a1, a2, a3, b1, b2, b3, apc;
+    float pan_c, pl, pr;
 } wt_voice_t;
 
 typedef struct {
@@ -65,6 +78,13 @@ typedef struct {
     float cur_vel;
     float drift_t, drift[WT_NV];
     int vmode;                // the mode the voices were started in
+    wt_egc_t egc[3];          // amp, MOD3, MOD4
+    struct {
+        uint8_t mod, dest;
+        float amt;
+    } route[WT_NMOD * WT_NDEST];   // the matrix's live routings, listed once
+    int nroute;
+    uint32_t quiet;           // frames of silence (render skips while idle)
     wt_fx_t fx;
     float scope[WT_SCOPE];    // the last output (mono), for the display
     uint32_t scope_w;

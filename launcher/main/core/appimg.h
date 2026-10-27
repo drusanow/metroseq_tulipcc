@@ -29,7 +29,7 @@ bool appimg_parse(const uint8_t *buf, size_t len, app_info_t *out);
 
 // --- slot cache -------------------------------------------------------------
 
-#define APP_SLOTS 4
+#define APP_SLOTS 6   // ota_0 .. ota_5 (components/tulip_hal/partitions_tulip.csv)
 
 typedef struct {
     uint8_t used;

@@ -67,9 +67,11 @@ static const fake_app_t APPS[] = {
     {"gintonix.bin", "gintonix", "1.0.0", 815104, 2},
     {"hello.bin", "hello", "1.0.0", 588800, -1},
     {"metroseq.bin", "metroseq", "2.0.0", 740976, 1},
-    {"studio.bin", "studio", "1.0.0", 891600, 0},
+    {"sloe.bin", "sloe", "1.0.0", 793248, 3},
+    {"studio.bin", "studio", "1.0.0", 950818, 0},
+    {"wavetron.bin", "wavetron", "1.0.0", 800480, 4},
 };
-#define NAPPS 4
+#define NAPPS 6
 int apps_scan(app_entry_t *out, int max) {
     for (int i = 0; i < NAPPS; i++) {
         memset(&out[i], 0, sizeof out[i]);

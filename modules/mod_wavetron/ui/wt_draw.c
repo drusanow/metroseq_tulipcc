@@ -9,9 +9,12 @@
 // The waterfall (the sketch's topographic wavetable view): every frame of
 // the table drawn as a waveform line, receding with a parallax skew, nearer
 // frames hiding the ones behind. That terrain is rendered once per table
-// into a canvas; the POSITION frame (white) and where the playing voice
-// really is after modulation (in the oscillator's colour) are drawn over
-// it on every change.
+// into a canvas, and the POSITION frame (white) over it when POSITION
+// changes. Where the playing voice really is after modulation is a small
+// marker beside the frames: moving it redraws a few pixels, not the whole
+// picture - redrawing the waterfall 20 times a second while notes played
+// cost enough PSRAM bandwidth to make the audio crackle and the panel
+// tear with four apps running.
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +28,8 @@ enum { D_WATERFALL, D_FILTER, D_ENV, D_LFO, D_DRIVE, D_UNISON, D_SCOPE, D_VOICES
 
 typedef struct {
     int type, arg;
-    lv_obj_t *obj, *canvas, *label;
+    lv_obj_t *obj, *canvas, *label, *marker;
+    int mark_x, mark_y;
     int w, h;
     uint16_t *buf;
     uint32_t sig;
@@ -170,20 +174,29 @@ static int wf_line(const disp_t *d, const wt_table_t *t, float pos, pt_t *p) {
 
 static void wf_post(lv_event_t *e) {
     disp_t *d = lv_event_get_user_data(e);
-    int idx = d->arg ? g_ib : g_ia;
-    const wt_table_t *t = &g_cat.t[idx];
-    lv_layer_t *layer = lv_event_get_layer(e);
+    const wt_table_t *t = &g_cat.t[d->arg ? g_ib : g_ia];
     pt_t p[WT_PREV_PTS];
-    wt_live_t lv;
-    wt_live(&lv);
-    float live = d->arg ? lv.pos_b : lv.pos_a;
-    float pos = g_wt.s.p[d->arg ? WP_B_POS : WP_A_POS];
-    if (live >= 0 && fabsf(live - pos) > 0.004f) {
-        int n = wf_line(d, t, live, p);
-        polyline(layer, p, n, d->arg ? C_OSCB : C_OSCA, 2);
+    int n = wf_line(d, t, g_wt.s.p[d->arg ? WP_B_POS : WP_A_POS], p);
+    polyline(lv_event_get_layer(e), p, n, C_TEXT, 2);
+}
+
+// the live position marker: a short bar left of the frame it's on
+static void wf_marker(disp_t *d, float live) {
+    if (live < 0) {
+        lv_obj_add_flag(d->marker, LV_OBJ_FLAG_HIDDEN);
+        d->mark_y = -1;
+        return;
     }
-    int n = wf_line(d, t, pos, p);
-    polyline(layer, p, n, C_TEXT, 2);
+    wf_geom_t g = wf_geom(d->w - 2, d->h - 2);
+    float base, xo;
+    wf_frame(&g, live * (WT_PREV_LINES - 1), &base, &xo);
+    int x = (int)xo - 16, y = (int)base - 2;
+    if (x < 0) x = 0;
+    if (x == d->mark_x && y == d->mark_y) return;
+    d->mark_x = x;
+    d->mark_y = y;
+    lv_obj_set_pos(d->marker, x, y);
+    lv_obj_remove_flag(d->marker, LV_OBJ_FLAG_HIDDEN);
 }
 
 lv_obj_t *wd_waterfall(lv_obj_t *par, int osc, int x, int y, int w, int h) {
@@ -195,6 +208,9 @@ lv_obj_t *wd_waterfall(lv_obj_t *par, int osc, int x, int y, int w, int h) {
     lv_obj_remove_flag(d->canvas, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(d->obj, wf_post, LV_EVENT_DRAW_POST, d);
     d->label = sw_label(d->obj, "", SW_F_SMALL, C_DIM, 6, 4, 0, false);
+    d->marker = sw_box(d->obj, 0, 0, 14, 5, osc ? C_OSCB : C_OSCA, 0);
+    lv_obj_add_flag(d->marker, LV_OBJ_FLAG_HIDDEN);
+    d->mark_y = -1;
     return d->obj;
 }
 
@@ -370,9 +386,9 @@ static void unison_draw(lv_layer_t *layer, disp_t *d) {
 static void scope_draw(lv_layer_t *layer, disp_t *d) {
     float X, Y, W, H;
     area_of(d, &X, &Y, &W, &H);
-    static float s[256];
-    int n = wt_scope_read(s, 256);
-    pt_t pts[256];
+    static float s[128];
+    int n = wt_scope_read(s, 128);
+    pt_t pts[128];
     float mid = Y + H / 2;
     for (int i = 0; i < n; i++) {
         pts[i].x = X + W * i / (n - 1);
@@ -448,12 +464,14 @@ static uint32_t sig_of(disp_t *d) {
     const float *p = g_wt.s.p;
     uint32_t h = 2166136261u;
     switch (d->type) {
-    case D_WATERFALL: {
-        wt_live_t lv;
-        wt_live(&lv);
+    case D_WATERFALL:
         h = mix(h, (float)(d->arg ? g_ib : g_ia));
         h = mix(h, p[d->arg ? WP_B_POS : WP_A_POS]);
-        h = mix(h, roundf((d->arg ? lv.pos_b : lv.pos_a) * 200));
+        break;
+    case D_VOICES: {   // only when a voice starts, stops or changes note
+        wt_live_t lv;
+        wt_live(&lv);
+        for (int v = 0; v < WT_NV; v++) h = mix(h, lv.active[v] + 2 * lv.gate[v] + 4 * lroundf(lv.note[v]));
         break;
     }
     case D_FILTER:
@@ -476,16 +494,22 @@ static uint32_t sig_of(disp_t *d) {
     case D_UNISON:
         for (int i = WP_UNI_DET; i <= WP_UNI_WIDTH; i++) h = mix(h, p[i]);
         break;
-    default: h = 0; break;   // live: always
+    default: h = 0; break;   // the scope: always (at 10 Hz)
     }
     return h;
 }
 
 void wd_tick(int page) {
     (void)page;
+    static unsigned n;
+    bool slow = (++n & 1) == 0;   // the scope at half the tick rate
+    wt_live_t lv;
+    wt_live(&lv);
     for (int k = 0; k < s_nd; k++) {
         disp_t *d = s_d[k];
         if (!lv_obj_is_visible(d->obj)) continue;
+        if (d->type == D_SCOPE && !slow) continue;
+        if (d->type == D_WATERFALL) wf_marker(d, d->arg ? lv.pos_b : lv.pos_a);
         if (d->type == D_WATERFALL) {
             int idx = d->arg ? g_ib : g_ia;
             const wt_table_t *t = &g_cat.t[idx];

@@ -265,7 +265,7 @@ static void install_task(void *arg) {
         part = slot_part(slot);
         if (!part || size > part->size) {
             xSemaphoreGive(s_mx);
-            fail(part ? "app is larger than an app slot (3 MB)" : "no app slots in partition table");
+            fail(part ? "app is larger than an app slot (2 MB)" : "no app slots in partition table");
             vTaskDelete(NULL);
         }
         g_install.state = INSTALL_ERASING;

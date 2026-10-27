@@ -6,8 +6,7 @@ runs in two ways:
 
 * **studio:** alongside metroseq, GinTonix and Sloe, on one clock. A metroseq track can play
   it ([STUDIO.md](STUDIO.md)).
-* **wavetron:** on its own (`wavetron.bin`; push it with the launcher's Wi-Fi page or
-  `tools/tulip.py`).
+* **wavetron:** on its own, from the launcher's home page.
 
 | OSC: the 3-D waterfall | MOD |
 |---|---|
@@ -83,6 +82,22 @@ page). The sketch's CCs:
 
 On the Studio home page, routing a metroseq track to **WAVETRON** plays it from the sequencer.
 A SLIDE stage glides.
+
+## Keeping it light next to the other apps
+
+Four apps share one audio core, and the panel shares the PSRAM bus with everything. So:
+
+* **Silent costs nothing.** Once no voice is sounding and every echo and reverb tail is
+  below -100 dB, Wavetron stops rendering until the next note.
+* **The waterfall redraws only when it changes:** when the table or POSITION changes. The
+  playing voice's position is a small bar beside the frames that moves on its own; it
+  used to be a second line that redrew the whole picture 20 times a second.
+* **The reverb and chorus lines are in internal RAM** (16-bit, about 30 KB). The reverb is
+  4 combs + 2 all-passes per side (Freeverb uses twice that).
+* **Per-voice coefficients are worked out when something changes,** not every 16 samples:
+  the envelopes, filter and pan. Fast exponentials replace the C library's `powf` /
+  `expf` / `tanf` in the audio path.
+* **The scope runs at 10 Hz, and the voices display only redraws when a note changes.**
 
 ## What's different from the sketch, and why
 

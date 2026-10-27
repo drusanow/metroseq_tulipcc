@@ -177,7 +177,7 @@ of the I2C bus. Touch is read only in gaps longer than a worst-case touch read.
 LVGL allocates from the 8 MB PSRAM (`components/tulip_hal/src/lv_mem_psram.c`), as on
 the original Tulip. Several apps' screens therefore fit without eating the internal RAM
 that DMA, stacks and the real-time code need. The Studio image uses 153 KB of 342 KB
-internal RAM statically, and 0.89 MB of its 3 MB app slot.
+internal RAM statically, and 0.95 MB of its 2 MB app slot.
 
 ## 5. Writing a module
 

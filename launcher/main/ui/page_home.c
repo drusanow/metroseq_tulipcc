@@ -24,9 +24,32 @@ static void tile_cb(lv_event_t *e) {
     if (i < H.n) ui_launch(H.apps[i].path);
 }
 
+// what the bundled apps are (an app image carries no description)
+static const char *what(const char *name) {
+    static const char *const W[][2] = {
+        {"studio", "ALL THE APPS TOGETHER"},
+        {"metroseq", "CV sequencer"},
+        {"gintonix", "drum machine"},
+        {"sloe", "synth"},
+        {"wavetron", "wavetable synth"},
+        {"hello", "app template"},
+    };
+    for (unsigned i = 0; i < sizeof W / sizeof W[0]; i++)
+        if (!strcmp(name, W[i][0])) return W[i][1];
+    return NULL;
+}
+
 static void build_tiles(void) {
     lv_obj_clean(H.grid);
     H.n = apps_scan(H.apps, MAX_APPS);
+    // Studio (the apps together) first, then the apps on their own
+    for (int i = 1; i < H.n; i++)
+        if (!strcmp(H.apps[i].info.name, "studio")) {
+            app_entry_t st = H.apps[i];
+            memmove(&H.apps[1], &H.apps[0], i * sizeof H.apps[0]);
+            H.apps[0] = st;
+            break;
+        }
     if (H.n == 0) {
         lv_obj_remove_flag(H.empty, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -44,17 +67,20 @@ static void build_tiles(void) {
         lv_obj_t *nm = th_text(t, a->info.name, 14, 12, TH_WHITE, &lv_font_montserrat_20);
         lv_obj_set_width(nm, TILE_W - 28);
         lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+        const char *w = what(a->info.name);
+        bool studio = !strcmp(a->info.name, "studio");
+        if (w) th_text(t, w, 14, 42, studio ? TH_ORANGE : TH_FG, &lv_font_montserrat_12);
         char b[64];
         snprintf(b, sizeof b, "v%s   %lu KB", a->info.version, (unsigned long)(a->size / 1024));
-        th_text(t, b, 14, 44, TH_DIM, &lv_font_montserrat_14);
-        th_text(t, a->slot >= 0 ? "READY" : "INSTALLS ON FIRST LAUNCH", 14, 72,
+        th_text(t, b, 14, 76, TH_DIM, &lv_font_montserrat_12);
+        th_text(t, a->slot >= 0 ? "READY" : "INSTALLS FIRST", TILE_W - 120, 76,
                 a->slot >= 0 ? TH_GREEN : TH_ORANGE, &lv_font_montserrat_12);
     }
 }
 
 void home_create(lv_obj_t *p) {
     th_title(p, "APPS", 16, 14, TH_ORANGE);
-    th_text(p, "tap an app to run it  -  apps are the .bin files in /files/apps", 96, 19, TH_DIM,
+    th_text(p, "tap an app to run it on its own - or STUDIO to run them together", 96, 19, TH_DIM,
             &lv_font_montserrat_14);
     H.grid = th_box(p, 16, 52, SCR_W - 32, 336);
     lv_obj_add_flag(H.grid, LV_OBJ_FLAG_SCROLLABLE);

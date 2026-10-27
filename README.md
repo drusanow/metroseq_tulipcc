@@ -77,9 +77,9 @@ reference/             the original MicroPython sketches (metroseq, GinTonix, Wa
 
 ## Flash it
 
-**First time:** flash the full image over USB. It holds the launcher with **studio**, **sloe**,
-**metroseq** and **gintonix** preloaded (Wavetron is inside studio; `wavetron.bin`, Wavetron
-on its own, goes on afterwards from the launcher's WI-FI page):
+**First time:** flash the full image over USB. It holds the launcher with **studio** (all
+the apps together) and **metroseq**, **gintonix**, **sloe** and **wavetron** on their own,
+preloaded:
 
 ```sh
 pip install esptool
@@ -87,7 +87,7 @@ esptool.py --chip esp32s3 write_flash 0x0 tulip-full.bin    # top (UART) USB por
 ```
 
 This replaces the Tulip firmware **and the area where Tulip keeps `/user`**, so back
-your files up first. To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
+your files up first. (Updating from an earlier image of this project keeps `/files`.) To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
 the same way.
 
 **After that:** put apps on over Wi-Fi from the launcher's WI-FI page. See
@@ -101,7 +101,7 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 4 apps) + wavetron.bin
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 5 apps)
 
 # develop an app:
 cd apps/studio && idf.py set-target esp32s3 && idf.py build

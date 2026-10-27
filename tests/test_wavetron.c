@@ -354,7 +354,23 @@ static void test_fx(void) {
     CHECK(peak(0, SR * 3) < 8, "all effects: bounded (%.2f)", peak(0, SR * 3));
     CHECK(peak(SR * 2, SR * 3) <= peak(0, SR) * 1.5f, "all effects: no runaway (%.2f then %.2f)",
           peak(0, SR), peak(SR * 2, SR * 3));
-    printf("effects: echo time, reverb tail, panic, everything at once: ok\n");
+    // silence: once every tail is gone, Wavetron stops rendering (and a
+    // new note brings it straight back)
+    s = plain();
+    s.p[WP_RV_LVL] = 0.3f;
+    reset(&s);
+    wt_note_on(&e, 0, 60, 60, 1, 0);
+    render(SR / 10);
+    wt_note_off(&e, 0, 60);
+    render(SR * 4);
+    CHECK(e.quiet >= SR / 4, "idle after the tail (%u)", e.quiet);
+    render(SR / 10);
+    CHECK(peak(0, SR / 10) == 0, "idle: nothing added");
+    wt_note_on(&e, 0, 60, 60, 1, 0);
+    render(SR / 10);
+    CHECK(peak(SR / 20, SR / 10) > 0.05f && e.quiet == 0, "a note wakes it");
+    wt_note_off(&e, 0, 60);
+    printf("effects: echo time, reverb tail, panic, everything at once, idle when silent: ok\n");
 }
 
 // --- WAV files -----------------------------------------------------------------------------

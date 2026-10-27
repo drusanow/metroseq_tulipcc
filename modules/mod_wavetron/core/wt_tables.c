@@ -8,6 +8,7 @@
 
 static void *def_alloc(unsigned n) { return malloc(n); }
 void *(*wt_alloc)(unsigned bytes) = def_alloc;
+void *(*wt_alloc_fast)(unsigned bytes) = def_alloc;
 void (*wt_free)(void *p) = free;
 
 #define TAU 6.2831853f

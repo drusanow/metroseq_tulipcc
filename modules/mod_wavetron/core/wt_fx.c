@@ -68,27 +68,29 @@ static inline float bq_run(wt_biquad_t *q, int ch, float x) {
 
 // --- set-up ----------------------------------------------------------------------------------
 
-// Freeverb's tunings (at 44.1 kHz); the right side is spread by 23 samples
-static const int COMB_LEN[WT_FX_NCOMB] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
-static const int AP_LEN[WT_FX_NAP] = {556, 441, 341, 225};
+// Freeverb's tunings (at 44.1 kHz), every other one; the right side is
+// spread by 23 samples
+static const int COMB_LEN[WT_FX_NCOMB] = {1116, 1277, 1422, 1557};
+static const int AP_LEN[WT_FX_NAP] = {556, 341};
+#define RV_SCALE 16384.0f   // 16-bit lines: +-2 full scale
 #define SPREAD 23
 
 bool wt_fx_init(wt_fx_t *f) {
     memset(f, 0, sizeof *f);
     for (int c = 0; c < 2; c++) {
-        f->ch_buf[c] = wt_alloc(WT_FX_CH_MAX * sizeof(float));
+        f->ch_buf[c] = wt_alloc_fast(WT_FX_CH_MAX * sizeof(float));
         f->ec_buf[c] = wt_alloc(WT_FX_ECHO_MAX * sizeof(int16_t));
         if (!f->ch_buf[c] || !f->ec_buf[c]) return false;
         for (int k = 0; k < WT_FX_NCOMB; k++) {
             wt_comb_t *cb = &f->comb[c][k];
             cb->len = COMB_LEN[k] + c * SPREAD;
-            cb->buf = wt_alloc(cb->len * sizeof(float));
+            cb->buf = wt_alloc_fast(cb->len * sizeof(int16_t));
             if (!cb->buf) return false;
         }
         for (int k = 0; k < WT_FX_NAP; k++) {
             wt_ap_t *a = &f->ap[c][k];
             a->len = AP_LEN[k] + c * SPREAD;
-            a->buf = wt_alloc(a->len * sizeof(float));
+            a->buf = wt_alloc_fast(a->len * sizeof(int16_t));
             if (!a->buf) return false;
         }
     }
@@ -101,14 +103,13 @@ void wt_fx_clear(wt_fx_t *f) {
         memset(f->ch_buf[c], 0, WT_FX_CH_MAX * sizeof(float));
         memset(f->ec_buf[c], 0, WT_FX_ECHO_MAX * sizeof(int16_t));
         for (int k = 0; k < WT_FX_NCOMB; k++) {
-            memset(f->comb[c][k].buf, 0, f->comb[c][k].len * sizeof(float));
+            memset(f->comb[c][k].buf, 0, f->comb[c][k].len * sizeof(int16_t));
             f->comb[c][k].lp = 0;
         }
-        for (int k = 0; k < WT_FX_NAP; k++) memset(f->ap[c][k].buf, 0, f->ap[c][k].len * sizeof(float));
-        f->ec_lp[c] = f->ec_hp[c] = f->rv_in_lp[c] = 0;
+        for (int k = 0; k < WT_FX_NAP; k++) memset(f->ap[c][k].buf, 0, f->ap[c][k].len * sizeof(int16_t));
+        f->ec_lp[c] = f->ec_hp[c] = 0;
         for (int b = 0; b < 3; b++) f->eq[b].z1[c] = f->eq[b].z2[c] = 0;
     }
-    f->rv_tail = 0;
 }
 
 void wt_fx_set(wt_fx_t *f, const float *p) {
@@ -174,7 +175,10 @@ static void chorus(wt_fx_t *f, float *l, float *r, int n) {
         for (int c = 0; c < 2; c++) f->ch_buf[c][f->ch_pos] = x[c];
         for (int c = 0; c < 2; c++) {
             float ph = f->ch_ph + c * 0.25f;   // a quarter cycle apart: width
-            float s = sinf(2 * PI * ph);
+            float q = ph - floorf(ph);   // sin(2 pi q): a refined parabola, no sinf per sample
+            q = q * 2 - 1;
+            float s = 4 * q * (1 - fabsf(q));
+            s = -(s + 0.225f * (s * fabsf(s) - s));
             float d = mid + sw * s + 1;
             float rp = (float)f->ch_pos - d;
             while (rp < 0) rp += WT_FX_CH_MAX;
@@ -215,36 +219,39 @@ static void echo(wt_fx_t *f, float *l, float *r, int n) {
     }
 }
 
+static inline int16_t to16(float x) {
+    x *= RV_SCALE;
+    return (int16_t)(x > 32767 ? 32767 : (x < -32768 ? -32768 : x));
+}
+
 static void reverb(wt_fx_t *f, float *l, float *r, int n) {
-    const float gain = 0.015f, damp = f->rv_damp, fb = f->rv_fb, xk = f->rv_xk;
-    float tail = f->rv_tail;
+    // 4 combs instead of Freeverb's 8, so the input gain doubles
+    const float gain = 0.03f, damp = f->rv_damp, fb = f->rv_fb, xk = f->rv_xk;
+    const float k16 = 1.0f / RV_SCALE;
     for (int i = 0; i < n; i++) {
         float in = (l[i] + r[i]) * gain;
         for (int c = 0; c < 2; c++) {
             float acc = 0;
             for (int k = 0; k < WT_FX_NCOMB; k++) {
                 wt_comb_t *cb = &f->comb[c][k];
-                float o = cb->buf[cb->pos];
+                float o = cb->buf[cb->pos] * k16;
                 // damping above the crossover: highs decay faster
                 cb->lp += xk * (o - cb->lp);
                 float fo = o + damp * (cb->lp - o);
-                cb->buf[cb->pos] = in + fo * fb;
+                cb->buf[cb->pos] = to16(in + fo * fb);
                 if (++cb->pos >= cb->len) cb->pos = 0;
                 acc += o;
             }
             for (int k = 0; k < WT_FX_NAP; k++) {
                 wt_ap_t *a = &f->ap[c][k];
-                float b = a->buf[a->pos];
-                a->buf[a->pos] = acc + b * 0.5f;
+                float b = a->buf[a->pos] * k16;
+                a->buf[a->pos] = to16(acc + b * 0.5f);
                 acc = b - acc;
                 if (++a->pos >= a->len) a->pos = 0;
             }
             (c ? r : l)[i] += f->rv_lvl * 0.5f * acc;
-            float m = fabsf(acc);
-            tail = m > tail ? m : tail * 0.9999f;
         }
     }
-    f->rv_tail = tail;
 }
 
 void wt_fx_process(wt_fx_t *f, float *l, float *r, int n) {

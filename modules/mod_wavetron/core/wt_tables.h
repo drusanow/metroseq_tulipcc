@@ -38,8 +38,10 @@ typedef struct {
     uint32_t used;        // LRU stamp (files only)
 } wt_table_t;
 
-// Memory for the tables (PSRAM on the Tulip). Set before wt_cat_init().
+// Memory for the tables (PSRAM on the Tulip), and for the small buffers
+// read every sample (internal RAM). Set before wt_cat_init() / wt_init().
 extern void *(*wt_alloc)(unsigned bytes);
+extern void *(*wt_alloc_fast)(unsigned bytes);
 extern void (*wt_free)(void *p);
 
 extern const char *const WT_BUILTIN_NAMES[WT_NBUILTIN];

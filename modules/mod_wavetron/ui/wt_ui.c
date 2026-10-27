@@ -349,11 +349,18 @@ void wt_ui_poll(bool visible) {
         U.toast_until = 0;
         lv_label_set_text(U.status, "");
     }
+    static int load_shown = -1;
     if (!U.toast_until) {
-        char t[32];
-        snprintf(t, sizeof t, "DSP %d%%", wt_load_pct());
-        lv_label_set_text(U.status, t);
-        lv_obj_set_style_text_color(U.status, sw_c(C_DIM), 0);
+        int ld = wt_load_pct();
+        if (ld != load_shown) {   // only when it changes: every redraw costs
+            load_shown = ld;
+            char t[32];
+            snprintf(t, sizeof t, "DSP %d%%", ld);
+            lv_label_set_text(U.status, t);
+            lv_obj_set_style_text_color(U.status, sw_c(C_DIM), 0);
+        }
+    } else {
+        load_shown = -1;
     }
     wd_tick(U.page);
     if (U.page == PG_OSC) pg_osc_tick();

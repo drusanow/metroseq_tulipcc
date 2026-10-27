@@ -10,7 +10,7 @@
 //   echo        level, time (20..1000 ms), feedback, tone (-1 dark .. +1
 //               bright, in the loop)
 //   reverb      level, liveness (decay), damping above the crossover: a
-//               Freeverb-style network (8 combs + 4 all-passes per side)
+//               Freeverb-style network (4 combs + 2 all-passes per side)
 //
 // Pure C: tested on the host.
 #pragma once
@@ -20,22 +20,24 @@
 
 #define WT_FX_ECHO_MAX   44100     // 1 s
 #define WT_FX_CH_MAX     512
-#define WT_FX_NCOMB      8
-#define WT_FX_NAP        4
+#define WT_FX_NCOMB      4
+#define WT_FX_NAP        2
 
 typedef struct {
     float b0, b1, b2, a1, a2;
     float z1[2], z2[2];
 } wt_biquad_t;
 
+// the reverb's lines: 16-bit, small enough for internal RAM (they're read
+// at 12 places every sample - from PSRAM that traffic starved the panel)
 typedef struct {
-    float *buf;
+    int16_t *buf;
     int len, pos;
     float lp;
 } wt_comb_t;
 
 typedef struct {
-    float *buf;
+    int16_t *buf;
     int len, pos;
 } wt_ap_t;
 
@@ -61,8 +63,6 @@ typedef struct {
     float ec_lp[2], ec_hp[2];
     wt_comb_t comb[2][WT_FX_NCOMB];
     wt_ap_t ap[2][WT_FX_NAP];
-    float rv_in_lp[2];
-    float rv_tail;            // envelope of the reverb's output (idle test)
 } wt_fx_t;
 
 bool wt_fx_init(wt_fx_t *f);
