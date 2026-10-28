@@ -32,7 +32,7 @@ jobs:
           tools/make_full_image.sh
           mkdir -p out
           cp apps/studio/build/studio.bin out/
-          cp launcher/build/launcher.bin out/
+          cp launcher/build/tulip_launcher.bin out/
           cp tulip-full.bin out/
 
       - name: Build the loadable example app (.elf)
