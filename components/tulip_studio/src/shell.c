@@ -55,7 +55,9 @@ static lv_obj_t *new_screen(void) {
 static void build(int i) {
     if (s_scr[i]) return;
     s_scr[i] = new_screen();
+    loader_guard_begin(g_mods[i]);
     if (g_mods[i]->ui_create) g_mods[i]->ui_create(s_scr[i]);
+    loader_guard_end(g_mods[i]);
 }
 
 static void show(int i) {

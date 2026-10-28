@@ -99,6 +99,31 @@ bool apps_read_manifest(const char *path, app_manifest_t *m) {
     return appimg_manifest(buf, n, m);
 }
 
+int apps_loaded(app_manifest_entry_t *out, int max) {
+    DIR *d = opendir(STUDIO_APPS_DIR);
+    if (!d) return 0;
+    int n = 0;
+    struct dirent *e;
+    static char txt[1024];   // UI task only
+    while ((e = readdir(d)) && n < max) {
+        size_t l = strlen(e->d_name);
+        if (l < 5 || l > 40 || strcmp(e->d_name + l - 4, ".elf")) continue;
+        char p[96];
+        snprintf(p, sizeof p, STUDIO_APPS_DIR "/%.*s.json", (int)(l - 4), e->d_name);
+        FILE *f = fopen(p, "rb");
+        if (!f) continue;
+        size_t k = fread(txt, 1, sizeof txt - 1, f);
+        fclose(f);
+        txt[k] = 0;
+        // its name must be its file's, as Tulip Studio insists
+        if (appimg_app_json(txt, &out[n]) && strlen(out[n].name) == l - 4 &&
+            !strncmp(out[n].name, e->d_name, l - 4))
+            n++;
+    }
+    closedir(d);
+    return n;
+}
+
 // Length of the valid image in a slot (0 if none).
 static uint32_t slot_image_len(const esp_partition_t *p) {
     esp_partition_pos_t pos = {.offset = p->address, .size = p->size};
@@ -164,6 +189,9 @@ static void adopt_slot(int i, const esp_partition_t *p, const esp_app_desc_t *d,
 
 void apps_init(void) {
     s_mx = xSemaphoreCreateMutex();
+    // where loadable Studio apps go, so an upload there just works
+    mkdir(TULIP_FS_ROOT "/studio", 0775);
+    mkdir(STUDIO_APPS_DIR, 0775);
     table_load();
     bool changed = false;
     // static: 6 x 256 bytes would overflow app_main's stack

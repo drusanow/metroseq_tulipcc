@@ -77,3 +77,13 @@ void audio_start(void);
 void shell_ui_create(void);
 void shell_ui_poll(void);
 void shell_set_open(int i, bool on);   // open / close an app in Studio
+
+// loader.c: apps from /files/studio/apps/*.elf (only: just that one, or NULL
+// for all). Returns how many were added to out.
+int loader_load_apps(const tmod_t **out, int room, const tmod_t *const *mods, int n, const char *only);
+bool loader_is_loaded(const tmod_t *m);
+// around a loaded app's code running for the first time (init, its screen):
+// a crash in between keeps it out next time
+void loader_guard_begin(const tmod_t *m);
+void loader_guard_end(const tmod_t *m);
+

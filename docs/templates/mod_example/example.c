@@ -196,3 +196,5 @@ tmod_t mod_example = {
     .patch_save = patch_save,
     .patch_load = patch_load,
 };
+
+TULIP_APP(mod_example)   // the entry point when built as an .elf; nothing otherwise

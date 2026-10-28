@@ -105,6 +105,11 @@ int studio_cv_clock_div(void) { return g_cfg.cv_div; }
 int studio_cv_clock_vout1(void) { return g_cfg.cv_vout1; }
 int studio_cv_clock_state(void) { return g_cfg.cv_clock ? CVCLK_SEQUENCER : CVCLK_OFF; }
 void tulip_boot_mode_set(const char *m) {}
+int loader_load_apps(const tmod_t **out, int room, const tmod_t *const *mods, int n, const char *only) { return 0; }
+bool loader_is_loaded(const tmod_t *m) { return false; }
+void loader_guard_begin(const tmod_t *m) {}
+void loader_guard_end(const tmod_t *m) {}
+bool studio_register_app(const tmod_t *m, int abi) { return false; }
 void tulip_boot_mode_get(char *out, int len) { snprintf(out, len, "%s", ""); }
 bool studio_mmc(void) { return g_cfg.mmc; }
 void studio_clock_status(studio_clock_status_t *st) { *st = s_st; }

@@ -171,6 +171,35 @@ static void test_manifest(void) {
     }
 }
 
+// a loaded app's <name>.json
+static void test_app_json(void) {
+    app_manifest_entry_t e;
+    CHECK(appimg_app_json("{\n  \"name\": \"example\",\n  \"title\" : \"EXAMPLE\",\n"
+                          "  \"role\":\"synth\", \"blurb\": \"a \\\"sine\\\" synth\"\n}",
+                          &e) &&
+              !strcmp(e.name, "example") && !strcmp(e.title, "EXAMPLE") && e.role == APP_ROLE_SYNTH &&
+              !strcmp(e.blurb, "a \"sine\" synth"),
+          "app.json parsed: '%s' '%s' %d '%s'", e.name, e.title, e.role, e.blurb);
+    CHECK(appimg_app_json("{\"name\":\"d\",\"role\":\"drums\"}", &e) && !strcmp(e.title, "d") &&
+              e.role == APP_ROLE_DRUMS && !e.blurb[0],
+          "app.json: title defaults to the name");
+    CHECK(!appimg_app_json("{\"name\":\"x\",\"role\":\"kazoo\"}", &e), "unknown role refused");
+    CHECK(!appimg_app_json("{\"title\":\"X\",\"role\":\"synth\"}", &e), "no name refused");
+    CHECK(!appimg_app_json("{\"name\":\"x\",\"role\":\"synth", &e), "cut short refused");
+    CHECK(appimg_app_json("{\"name\":\"averyveryverylongname\",\"role\":\"synth\"}", &e) &&
+              strlen(e.name) == sizeof e.name - 1,
+          "long name cut to the field");
+    // the template's own file
+    FILE *f = fopen("../docs/templates/mod_example/app.json", "rb");
+    if (f) {
+        char t[512] = {0};
+        size_t n = fread(t, 1, sizeof t - 1, f);
+        fclose(f);
+        CHECK(n > 0 && appimg_app_json(t, &e) && !strcmp(e.name, "example"), "template app.json");
+    }
+    printf("app.json: fields, defaults, bad role / name / truncation refused\n");
+}
+
 static void test_slots(void) {
     app_slot_t s[APP_SLOTS] = {0};
     uint8_t a[32], b[32];
@@ -192,6 +221,7 @@ int main(void) {
     test_paths();
     test_appimg();
     test_manifest();
+    test_app_json();
     test_slots();
     printf(failures ? "\n%d FAILURES\n" : "\nall launcher tests passed\n", failures);
     return failures ? 1 : 0;

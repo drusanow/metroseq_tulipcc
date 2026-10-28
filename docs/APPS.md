@@ -82,26 +82,44 @@ at start-up.
    apps four at a time.
 
 `studio.bin` must fit a 1.5 MB app slot (`tools/make_full_image.sh` checks this). With
-the five apps it is about 1.0 MB.
+the five apps it is about 1.05 MB.
 
-### Why apps are compiled in, not loaded as separate files
+### Without ESP-IDF on your computer: the cloud build
+
+`.github/workflows/build.yml` builds everything on GitHub on every push. To add an app:
+
+1. Commit its folder in `modules/` and push.
+2. Open the repository's **Actions** tab, then the latest **build** run.
+3. Download the **tulip-studio** artifact. It holds:
+   * `studio.bin`;
+   * `tulip-full.bin` (for a first flash);
+   * `example.elf` and `example.json` (section 7).
+4. Push `studio.bin` to the Tulip as above.
+
+A tag `v*` also makes a GitHub release with the same files. The same run builds the
+host tests too.
+
+### Built in, or loaded from a file
+
+There are two ways to get an app onto the Tulip:
+
+| | Built into `studio.bin` (sections 1-6) | Loaded from `/files/studio/apps` (section 7, an experiment) |
+|---|---|---|
+| Adding an app | rebuild `studio.bin` (locally or in the cloud), push it | build the app's `.elf`, copy it over; no new `studio.bin` |
+| An app that crashes | a build you tested; a crash returns to the launcher | the same, and the Tulip leaves that app out next time |
+| Speed | `render` can run from internal RAM (`(noflash)`) | everything runs from PSRAM through the cache, like the rest of the firmware's code; fine for light DSP, slower for heavy DSP |
+| What it may call | anything | only what Tulip Studio exports (`tools/tulip_abi.py list`) |
+| Tested on a Tulip | yes, every built-in app | **not yet** |
 
 The Studio runs several apps at the same moment, sharing one clock, one audio mix and
-one MIDI port. On the ESP32-S3 that only works inside **one firmware image**:
+one MIDI port. That only works inside one running firmware: the ESP32-S3 boots one
+image, and it has no memory protection to keep apps apart. So a loaded app isn't a
+separate program. Tulip Studio links it into itself as it starts, and from then on it
+is an app like the built-in ones. That is also why a loaded app can crash the whole
+Tulip, just as a built-in one can.
 
-* The chip boots one image.
-* It has no memory protection to keep separately built programs apart.
-
-Loading app code from `/files` at run time (Espressif's `elf_loader`) is possible, but
-it has costs:
-
-* **Crashes:** an app that crashes takes everything down, with no way to contain it.
-* **Interface:** every function an app calls has to be exported to the loader by hand.
-* **Speed:** code loaded at run time runs from PSRAM. That is slower, and it stalls
-  whenever flash is written, which hurts audio and real-time timing.
-
-So "upload a new app" here means "upload a new `studio.bin`", which is one push. A
-broken app then fails to build on your PC, not on stage.
+(Flash writes don't pause code in PSRAM on this firmware: `CONFIG_SPIRAM_XIP_FROM_PSRAM`
+keeps the cache on while files are saved.)
 
 ## 3. Roles: what the runtime gives each app
 
@@ -178,12 +196,13 @@ These keep the audio and the timing solid with every app running:
      lock held for microseconds.
 2. **Real-time code lives in internal RAM.**
    * Map `render` and what it calls `(noflash)` in your `linker.lf`.
-   * Keep their data out of flash (`const` tables in flash stall during a write; copy
-     them to RAM in `init`).
-   * Don't call flash code (`sinf`, `powf`, `printf`) from them: make tables in `init`.
+   * Copy the tables it reads to RAM in `init`.
+   * Don't call library code (`sinf`, `powf`, `printf`) from it: make tables in `init`.
 
-   A file save stalls flash for milliseconds, and anything running from flash stops
-   with it.
+   The rest of the firmware's code runs from PSRAM through a cache. A cache miss costs
+   time at random moments. Code in internal RAM always runs at full speed, so a
+   1.09 ms audio block never waits on the cache. (A loaded app can't do this: section
+   7.)
 3. **`init` is short and allocates once.**
    * In the Studio it runs while the other apps play.
    * Big buffers go in PSRAM (`heap_caps_malloc(.., MALLOC_CAP_SPIRAM)`).
@@ -218,3 +237,91 @@ These keep the audio and the timing solid with every app running:
   page and on the Studio home page.
 * [ ] Optional: host tests for the DSP or the sequencer in `tests/`, and screens in
   `tools/ui_preview`.
+
+## 7. Loading apps from files (an experiment)
+
+An app can also be built on its own as an `.elf` file, and Tulip Studio loads it when
+it starts. There is **no new `studio.bin`**: copy two files over and restart.
+
+**This is a prototype, and it hasn't run on a Tulip yet.** Everything below builds, and
+the example's `.elf` is checked against what the firmware exports, but no loaded app
+has played a note on the hardware. Test it with nothing important at stake first.
+
+### Building and installing one
+
+The app is the same folder as in section 1. Its last line must be:
+
+```c
+TULIP_APP(mod_<name>)   // the entry point when built as an .elf; nothing otherwise
+```
+
+Then:
+
+```sh
+tools/build_elf_app.sh docs/templates/mod_example      # -> build/elf_apps/example.elf + .json
+tools/tulip.py --pin <PIN> push build/elf_apps/example.elf build/elf_apps/example.json
+```
+
+* `tulip.py` puts an `.elf`, and the `.json` pushed with it, in `/files/studio/apps/`.
+  From a browser, upload both into that folder.
+* Then start Tulip Studio again (or tap any of its tiles). The app appears on the
+  launcher's start page, marked LOADED, and on the Studio home page.
+* The same folder works both ways: put it in `modules/` instead and it's built in.
+* The cloud build makes `example.elf` too.
+
+The `.elf` build takes seconds. It fails with a list if the app calls anything Tulip
+Studio doesn't export. That list is every function in `studio/studio.h` and
+`studio/widgets.h`, the clock's timeline functions, and
+`components/tulip_studio/abi/extra.txt`: common C library, maths, FreeRTOS queues,
+cJSON and a set of LVGL. `tools/tulip_abi.py list` prints it.
+
+### How it works
+
+* **Loading.** At start-up, `components/tulip_studio/src/loader.c` reads each
+  `/files/studio/apps/<name>.elf`. Espressif's `elf_loader` (vendored in
+  `components/elf_loader`) then:
+  1. copies the file into PSRAM;
+  2. links its calls to the firmware's exported functions (generated from that list
+     at build time);
+  3. calls the app's `app_main()`, which hands over its `tmod_t`.
+* **Which apps load.** In the Studio, every one. On its own, only the app you tapped.
+  For a built-in app, none.
+* **The checks.** An app is refused, with a line in the log, if:
+  * it calls something not exported;
+  * it was built for another `TULIP_ABI_VERSION`;
+  * its name isn't its file name;
+  * a built-in app already has that name.
+* **The crash guard.** Before a loaded app's code first runs (`app_main`, `init`, its
+  screen), its name is written to NVS, and it is cleared afterwards. If the Tulip
+  restarts with a name still there, that app crashed. Its file is renamed
+  `<name>.elf.crashed` and Tulip Studio starts without it.
+  * A crash later on (in `render`, say) isn't caught this way. It still returns to
+    the launcher, as any crash does.
+* **Memory.** The example is 6 KB on file and uses about 6 KB of PSRAM once loaded.
+  Internal RAM isn't touched, so memory protection stays on.
+* **Size.** Exporting the functions added about 48 KB to `studio.bin`.
+
+### Limits of the prototype
+
+* **Speed:** a loaded app's code all runs from PSRAM through the cache (`(noflash)`
+  doesn't apply). Light DSP like the example's is fine. Something like Wavetron should
+  stay built in.
+* **One version:** an app runs only on the `TULIP_ABI_VERSION` it was built for. That
+  number goes up only when an exported function changes. Adding exports keeps old
+  apps working.
+* **What isn't exported:** anything not on the list (the network, the I2C bus
+  directly, most of LVGL) can't be used. Add to `abi/extra.txt` and rebuild
+  `studio.bin` once.
+* **Loading happens at start-up only.** Dropping in a new `.elf` needs a restart of
+  Tulip Studio.
+
+### To test on a Tulip
+
+1. Flash or push this firmware, then push the example as above.
+2. Tap **STUDIO**. EXAMPLE should be on the home page.
+   * Switch it on, play notes on MIDI channel 1 (or route a metroseq track to it), and
+     listen.
+   * Watch the audio load and XRUN on the home page.
+3. Tap the EXAMPLE tile on the start page: it runs on its own.
+4. The serial log (`idf.py monitor` on the USB port) says what was loaded or why not:
+   lines from `loader`.

@@ -157,7 +157,9 @@ The same image runs an app on its own or the Studio:
 * The launcher reads it and shows a tile per app.
 
 **Adding an app** is a folder in `modules/` and a rebuild; nothing else is edited.
-[APPS.md](APPS.md) covers it, and why apps aren't loaded at run time instead.
+The rebuild can happen on GitHub (the cloud build). As an experiment, an app can
+instead be built as an `.elf` and loaded from `/files/studio/apps` when Tulip Studio
+starts. [APPS.md](APPS.md) covers both.
 
 ## 4. How it works
 

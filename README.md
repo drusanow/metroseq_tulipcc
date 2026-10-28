@@ -19,8 +19,14 @@ gets the clock, MIDI and CV services for its role:
 | **Sequencers** | CV gate and pitch, MIDI OUT, MIDI clock in and out |
 | **Synths** | MIDI IN, and notes from any sequencer track routed to them |
 
-**Adding an app:** drop a folder in `modules/`, rebuild, upload. It then appears on the
-start page and in the Studio.
+**Adding an app:** drop a folder in `modules/`, rebuild (on your computer, or in the
+cloud on every push to GitHub), upload `studio.bin`. It then appears on the start page
+and in the Studio.
+
+**Experimental:** an app can also be built as an `.elf` file and copied to
+`/files/studio/apps/`. Tulip Studio loads it at start-up, with no new `studio.bin`
+(see [docs/APPS.md §7](docs/APPS.md#7-loading-apps-from-files-an-experiment); not yet
+tried on a Tulip).
 
 * **[The launcher](docs/LAUNCHER.md)**: the start page.
   * Tiles for each app, STUDIO, and any other app images; a file browser to make
@@ -104,8 +110,11 @@ components/
                        /files, settings, app lifecycle; partition table + base sdkconfig
   lvgl/                LVGL v9.2.2 (git submodule)
   mdns/                vendored from espressif/esp-protocols (tulip.local)
+  elf_loader/          vendored from espressif/esp-iot-solution (loads .elf apps)
 tools/tulip.py         push/pull/launch over Wi-Fi (Python standard library only)
 tools/make_full_image.sh   build everything into tulip-full.bin
+tools/build_elf_app.sh     build an app as a loadable .elf (experimental)
+tools/tulip_abi.py         what a loaded app may call; the firmware's export table
 tools/gen_gx_factory.py    GinTonix factory kits -> C (from gintonic_presets.py)
 tools/make_d9_samples.py   the Gamma 9001 samples -> the samples partition image
 tools/ui_preview/      render the on-device UIs to PNGs on a PC
@@ -138,7 +147,15 @@ Tulip's `/user/gintonix` folder to `/files/gintonix`.
 
 ## Build it
 
-You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/esp32s3/get-started/).
+**In the cloud:** every push to GitHub runs `.github/workflows/build.yml`. Its
+**tulip-studio** artifact (on the run's page in the Actions tab) holds:
+* `studio.bin`;
+* `tulip-full.bin`;
+* the example app as an `.elf`.
+
+A `v*` tag also makes a release.
+
+**On your computer:** you need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/esp32s3/get-started/).
 
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init

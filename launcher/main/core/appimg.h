@@ -33,6 +33,11 @@ bool appimg_parse(const uint8_t *buf, size_t len, app_info_t *out);
 #include "tulip/app_manifest.h"
 bool appimg_manifest(const uint8_t *buf, size_t len, app_manifest_t *out);
 
+// An app.json (a loaded app's <name>.json next to its .elf): the flat
+// "name" / "title" / "role" / "blurb" strings. False without a valid name and
+// role. Not a general JSON parser: string values, \" and \\ escapes.
+bool appimg_app_json(const char *txt, app_manifest_entry_t *out);
+
 // --- slot cache -------------------------------------------------------------
 
 #define APP_SLOTS 6   // ota_0 .. ota_5 (components/tulip_hal/partitions_tulip.csv)

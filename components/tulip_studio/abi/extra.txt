@@ -1,0 +1,64 @@
+# What a loaded app (.elf) may call, besides every function and extern
+# variable declared in studio/studio.h, studio/widgets.h and studio/tclock.h
+# (tools/tulip_abi.py adds those) and the C library basics elf_loader itself
+# exports. One symbol per line. Adding to this list is backward compatible;
+# removing or changing a function's arguments is not - bump TULIP_ABI_VERSION.
+
+
+# --- C library
+snprintf vsnprintf sprintf sscanf
+strncpy strncmp strcasecmp strncasecmp strstr strcat strcpy strdup strtoul strtof atoi atof
+memmove memcmp memchr
+qsort bsearch rand srand abs labs
+fopen fclose fread fwrite fseek ftell fgets fflush feof
+rename unlink remove mkdir stat opendir readdir closedir
+esp_log_write esp_log_timestamp
+heap_caps_malloc heap_caps_calloc heap_caps_free heap_caps_realloc
+
+# --- maths (call these from init(), not from render(): make tables)
+sinf cosf tanf asinf acosf atanf atan2f sinhf coshf tanhf
+expf exp2f logf log2f log10f powf sqrtf cbrtf
+floorf ceilf roundf truncf fmodf lrintf
+sin cos tan exp log log10 pow sqrt floor ceil fmod
+
+# --- compiler support (double and 64-bit arithmetic)
+__adddf3 __subdf3 __muldf3 __divdf3 __negdf2
+__eqdf2 __nedf2 __ltdf2 __ledf2 __gtdf2 __gedf2 __unorddf2
+__floatsidf __floatunsidf __floatdidf __floatundidf __fixdfsi __fixunsdfsi __fixdfdi __fixunsdfdi
+__extendsfdf2 __truncdfsf2
+__floatdisf __floatundisf __fixsfdi __fixunssfdi
+__divdi3 __moddi3 __udivdi3 __umoddi3 __muldi3 __ashldi3 __ashrdi3 __lshrdi3
+__divsf3
+
+# --- FreeRTOS (the functions behind xQueueCreate / xQueueSend / ... macros)
+xQueueGenericCreate xQueueGenericSend xQueueReceive xQueueGenericReset uxQueueMessagesWaiting vQueueDelete
+vTaskDelay xTaskGetTickCount
+vPortExitCritical
+xPortEnterCriticalTimeout
+
+# --- cJSON (Studio patches, settings files)
+cJSON_CreateObject cJSON_CreateArray cJSON_CreateNumber cJSON_CreateString cJSON_CreateBool cJSON_CreateNull
+cJSON_AddItemToObject cJSON_AddItemToArray cJSON_AddNumberToObject cJSON_AddStringToObject
+cJSON_AddBoolToObject cJSON_AddObjectToObject cJSON_AddArrayToObject
+cJSON_GetObjectItem cJSON_GetObjectItemCaseSensitive cJSON_GetArrayItem cJSON_GetArraySize
+cJSON_IsNumber cJSON_IsString cJSON_IsBool cJSON_IsTrue cJSON_IsFalse cJSON_IsObject cJSON_IsArray cJSON_IsNull
+cJSON_Parse cJSON_Print cJSON_PrintUnformatted cJSON_Delete cJSON_free cJSON_DetachItemFromObject
+
+# --- LVGL (prefer the studio/widgets.h sw_* widgets; these for the rest)
+lv_obj_create lv_obj_delete lv_obj_clean lv_obj_get_parent lv_obj_get_child lv_obj_get_child_count
+lv_obj_set_pos lv_obj_set_x lv_obj_set_y lv_obj_set_size lv_obj_set_width lv_obj_set_height
+lv_obj_get_x lv_obj_get_y lv_obj_get_width lv_obj_get_height
+lv_obj_add_flag lv_obj_remove_flag lv_obj_has_flag lv_obj_is_visible lv_obj_invalidate
+lv_obj_add_state lv_obj_remove_state lv_obj_has_state
+lv_obj_set_user_data lv_obj_get_user_data
+lv_obj_add_event_cb lv_event_get_user_data lv_event_get_target lv_event_get_code lv_event_get_indev
+lv_indev_get_point lv_indev_active
+lv_obj_set_style_bg_color lv_obj_set_style_bg_opa lv_obj_set_style_border_color lv_obj_set_style_border_width
+lv_obj_set_style_radius lv_obj_set_style_text_color lv_obj_set_style_text_font lv_obj_set_style_text_align
+lv_obj_set_style_line_color lv_obj_set_style_line_width
+lv_label_create lv_label_set_text lv_label_set_text_fmt lv_label_set_text_static lv_label_set_long_mode lv_label_get_text
+lv_line_create lv_line_set_points
+lv_timer_create lv_timer_delete lv_timer_get_user_data lv_timer_set_period lv_timer_pause lv_timer_resume
+lv_tick_get lv_tick_elaps lv_color_hex lv_color_make lv_malloc lv_free lv_memset lv_memcpy
+lv_screen_active lv_layer_top
+lv_font_montserrat_12 lv_font_montserrat_14 lv_font_montserrat_16 lv_font_montserrat_20 lv_font_montserrat_28

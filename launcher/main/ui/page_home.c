@@ -27,6 +27,8 @@ static struct {
     app_entry_t apps[MAX_APPS];
     int n;
     app_manifest_t man;   // the apps in studio.bin
+    app_manifest_entry_t loaded[APP_MANIFEST_MAX];   // ... and those it loads from /files
+    int nloaded;
     int studio;           // its index in apps[], -1 none
     tile_t tiles[APP_MANIFEST_MAX + MAX_APPS + 1];
     int ntiles;
@@ -94,14 +96,17 @@ static int studio_tiles(void) {
     // each app on its own: sequencers, then drum machines, then synths
     int cell = 0;
     for (int role = APP_ROLE_SEQUENCER; role <= APP_ROLE_SYNTH; role++)
-        for (int i = 0; i < H.man.count; i++) {
-            const app_manifest_entry_t *e = &H.man.app[i];
+        for (int i = 0; i < H.man.count + H.nloaded; i++) {
+            bool loaded = i >= H.man.count;
+            const app_manifest_entry_t *e = loaded ? &H.loaded[i - H.man.count] : &H.man.app[i];
             if (e->role != role) continue;
             int x, y;
             cell_pos(cell++, &x, &y);
             t = tile(x, y, TILE_W, TILE_H, st->path, e->name, e->title);
             name_text(t, e->title);
             th_text(t, ROLE[role], 14, 38, ROLE_C[role], &lv_font_montserrat_12);
+            // from /files/studio/apps, not built in: an experiment
+            if (loaded) th_text(t, "LOADED", TILE_W - 66, 14, TH_DIM, &lv_font_montserrat_12);
             lv_obj_t *bl = th_text(t, e->blurb, 14, 54, TH_DIM, &lv_font_montserrat_12);
             lv_obj_set_size(bl, TILE_W - 24, 46);
             lv_label_set_long_mode(bl, LV_LABEL_LONG_WRAP);
@@ -127,6 +132,17 @@ static void build_tiles(void) {
     for (int i = 0; i < H.n && H.studio < 0; i++)
         if (!strcmp(H.apps[i].info.name, "studio") && apps_read_manifest(H.apps[i].path, &H.man))
             H.studio = i;
+    H.nloaded = 0;
+    if (H.studio >= 0) {
+        app_manifest_entry_t found[APP_MANIFEST_MAX];
+        int nf = apps_loaded(found, APP_MANIFEST_MAX);
+        // the Studio holds 16 apps at most, and skips a name it has built in
+        for (int i = 0; i < nf && H.man.count + H.nloaded < APP_MANIFEST_MAX; i++) {
+            bool dup = false;
+            for (int j = 0; j < H.man.count; j++) dup |= !strcmp(found[i].name, H.man.app[j].name);
+            if (!dup) H.loaded[H.nloaded++] = found[i];
+        }
+    }
     int y = H.studio >= 0 ? studio_tiles() : 0;
     // anything else in /files/apps
     int k = 0;

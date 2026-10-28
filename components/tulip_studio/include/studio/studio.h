@@ -162,6 +162,26 @@ typedef struct tmod {
 // and is only started - init(), then rt_init() - when it's switched ON.
 void studio_run(const tmod_t *const *mods, int n);
 
+// --- apps loaded at start-up (an experiment: docs/APPS.md section 7) -----------
+//
+// An app built as an .elf (tools/build_elf_app.sh) and put in
+// /files/studio/apps/<name>.elf is loaded when Tulip Studio starts and runs
+// like the built-in apps. It may call what tools/tulip_abi.py lists. Its
+// sources end with TULIP_APP(mod_<name>), which (built as an .elf) is its
+// entry point, handing its tmod_t over; built into the image it's nothing.
+#define TULIP_ABI_VERSION 1
+bool studio_register_app(const tmod_t *m, int abi_version);
+#ifdef TULIP_ELF_APP
+#define TULIP_APP(mod)                                                         \
+    int app_main(int argc, char *argv[]) {                                     \
+        (void)argc;                                                            \
+        (void)argv;                                                            \
+        return studio_register_app(&(mod), TULIP_ABI_VERSION) ? 0 : -1;        \
+    }
+#else
+#define TULIP_APP(mod)
+#endif
+
 // True once the app has been started (its init() has run).
 bool studio_module_started(int i);
 // Studio: switch an app ON (starting it the first time) or OFF. UI task.

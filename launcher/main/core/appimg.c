@@ -56,6 +56,50 @@ bool appimg_manifest(const uint8_t *buf, size_t len, app_manifest_t *out) {
     return true;
 }
 
+// the string value of "key", or false
+static bool json_str(const char *txt, const char *key, char *out, size_t len) {
+    char pat[24];
+    size_t kl = strlen(key);
+    if (kl + 3 > sizeof pat) return false;
+    pat[0] = '"';
+    memcpy(pat + 1, key, kl);
+    pat[kl + 1] = '"';
+    pat[kl + 2] = 0;
+    const char *p = strstr(txt, pat);
+    if (!p) return false;
+    p += kl + 2;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p++ != ':') return false;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p++ != '"') return false;
+    size_t n = 0;
+    for (; *p && *p != '"'; p++) {
+        if (*p == '\\' && p[1]) p++;
+        if (n + 1 < len) out[n++] = *p;
+    }
+    out[n] = 0;
+    return *p == '"';
+}
+
+bool appimg_app_json(const char *txt, app_manifest_entry_t *out) {
+    memset(out, 0, sizeof *out);
+    char role[16];
+    if (!json_str(txt, "name", out->name, sizeof out->name) || !out->name[0]) return false;
+    if (!json_str(txt, "role", role, sizeof role)) return false;
+    if (!strcmp(role, "sequencer"))
+        out->role = APP_ROLE_SEQUENCER;
+    else if (!strcmp(role, "drums"))
+        out->role = APP_ROLE_DRUMS;
+    else if (!strcmp(role, "synth"))
+        out->role = APP_ROLE_SYNTH;
+    else
+        return false;
+    if (!json_str(txt, "title", out->title, sizeof out->title) || !out->title[0])
+        memcpy(out->title, out->name, sizeof out->title);
+    json_str(txt, "blurb", out->blurb, sizeof out->blurb);
+    return true;
+}
+
 int slots_find(const app_slot_t *s, int n, const uint8_t sha[32], uint32_t size) {
     for (int i = 0; i < n; i++)
         if (s[i].used && s[i].size == size && memcmp(s[i].elf_sha, sha, 32) == 0) return i;

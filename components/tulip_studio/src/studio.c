@@ -214,29 +214,40 @@ void studio_run(const tmod_t *const *mods, int n) {
     if (n > STUDIO_MAX_MODULES) n = STUDIO_MAX_MODULES;
     tulip_app_init();       // under the launcher: a reset goes back to it
     tulip_settings_load();  // device-wide touch calibration + brightness (and NVS)
+    s_files = tulip_fs_mount(false);
+    if (!s_files) ESP_LOGW(TAG, "no /files: app data can't be saved, no apps loaded");
     // one app on its own, or the Studio (the launcher's choice)
     char mode[24];
     tulip_boot_mode_get(mode, sizeof mode);
+    // the built-in apps, then any loaded from /files/studio/apps (only the
+    // one asked for, when it's one of those)
+    static const tmod_t *all[STUDIO_MAX_MODULES];
+    int na = 0;
+    for (int i = 0; i < n; i++) all[na++] = mods[i];
+    bool builtin = false;
+    for (int i = 0; i < n; i++) builtin |= mode[0] && !strcmp(mode, mods[i]->name);
+    if (s_files && !builtin)
+        na += loader_load_apps(all + na, STUDIO_MAX_MODULES - na, mods, n, mode[0] ? mode : NULL);
     g_nmods = 0;
-    for (int i = 0; i < n; i++)
-        if (n > 1 && mode[0] && !strcmp(mode, mods[i]->name)) {
-            g_mods[g_nmods++] = mods[i];
-            snprintf(g_single, sizeof g_single, "%s", mods[i]->name);
+    for (int i = 0; i < na; i++)
+        if (mode[0] && !strcmp(mode, all[i]->name)) {
+            g_mods[g_nmods++] = all[i];
+            snprintf(g_single, sizeof g_single, "%s", all[i]->name);
         }
     if (!g_nmods)
-        for (int i = 0; i < n; i++) g_mods[g_nmods++] = mods[i];
+        for (int i = 0; i < na; i++) g_mods[g_nmods++] = all[i];
     if (g_nmods == 1 && !g_single[0]) snprintf(g_single, sizeof g_single, "%s", g_mods[0]->name);
     n = g_nmods;
 
     cfg_load();
-    s_files = tulip_fs_mount(false);
-    if (!s_files) ESP_LOGW(TAG, "no /files: app data can't be saved");
 
     // on its own, the app starts now; in the Studio, every app is off
     // until it's switched on
     if (n == 1) {
         g_enabled[0] = s_on[0] = true;
+        loader_guard_begin(g_mods[0]);
         if (g_mods[0]->init) g_mods[0]->init();
+        loader_guard_end(g_mods[0]);
         g_started[0] = true;   // rt_init() runs as the rt task starts
     }
     rt_start();
@@ -264,7 +275,9 @@ void studio_module_set_on(int i, bool on) {
     s_on[i] = on;
     if (on && !g_started[i]) {
         g_started[i] = true;   // (UI side: init() never runs twice)
+        loader_guard_begin(g_mods[i]);
         if (g_mods[i]->init) g_mods[i]->init();
+        loader_guard_end(g_mods[i]);
         post_sure(HC_START, i, 0);
     }
     post_sure(HC_ENABLE, i, on);

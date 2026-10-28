@@ -8,7 +8,8 @@ Standard library only. Talks to the launcher's web API (launcher/main/web.h).
     info                         device, storage, apps
     ls [PATH]                    list a folder            (default /apps)
     push FILE... [--to DIR] [--launch]
-                                 upload (apps go to /apps by default);
+                                 upload (.bin apps go to /apps, .elf apps
+                                 and their .json to /studio/apps);
                                  --launch runs the (last) app afterwards
     pull PATH [LOCAL]            download
     mkdir PATH | rm PATH | mv FROM TO
@@ -57,6 +58,19 @@ def remote(dirpath, name):
     return (dirpath.rstrip("/") or "") + "/" + name
 
 
+def default_dir(name, files):
+    """.bin apps -> /apps; loadable Studio apps (.elf, and the .json pushed
+    with one) -> /studio/apps; anything else -> /."""
+    low = name.lower()
+    if low.endswith(".bin"):
+        return "/apps"
+    stem = os.path.splitext(name)[0]
+    if low.endswith(".elf") or (low.endswith(".json") and
+                                any(os.path.basename(f) == stem + ".elf" for f in files)):
+        return "/studio/apps"
+    return "/"
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default=os.environ.get("TULIP_HOST", "tulip.local"))
@@ -98,7 +112,7 @@ def main(argv=None):
         last_app = None
         for f in a.files:
             name = os.path.basename(f)
-            dest_dir = a.to or ("/apps" if name.lower().endswith(".bin") else "/")
+            dest_dir = a.to or default_dir(name, a.files)
             with open(f, "rb") as fh:
                 data = fh.read()
             dest = remote(dest_dir, name)

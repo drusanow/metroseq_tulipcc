@@ -110,6 +110,12 @@ bool apps_read_manifest(const char *path, app_manifest_t *m) {
     memcpy(m->app, E, sizeof E);
     return true;
 }
+int apps_loaded(app_manifest_entry_t *out, int max) {
+    static const app_manifest_entry_t E = {"example", "EXAMPLE", APP_ROLE_SYNTH, {0},
+                                           "Template: a sine synth that plays MIDI IN and routed tracks"};
+    out[0] = E;
+    return 1;
+}
 void tulip_boot_mode_set(const char *mode) {}
 void tulip_boot_mode_get(char *out, int len) { snprintf(out, len, "%s", ""); }
 int apps_slots(app_slot_t out[APP_SLOTS]) {

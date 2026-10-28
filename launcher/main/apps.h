@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "core/appimg.h"
+#include "tulip/fs.h"
 
 #define MAX_APPS 48
 
@@ -63,6 +64,11 @@ bool apps_read_info(const char *path, app_info_t *info, uint32_t *size);
 
 // The apps inside a Tulip Studio image (its manifest). False if it isn't one.
 bool apps_read_manifest(const char *path, app_manifest_t *m);
+
+// Apps Tulip Studio loads at start-up (an experiment): each <name>.elf in
+// /files/studio/apps with its <name>.json beside it. Returns how many.
+#define STUDIO_APPS_DIR TULIP_FS_ROOT "/studio/apps"
+int apps_loaded(app_manifest_entry_t *out, int max);
 
 // Start launching (in the background; watch g_install). False if busy or
 // not an app. mode: how a Tulip Studio image starts - "" the Studio, or an
