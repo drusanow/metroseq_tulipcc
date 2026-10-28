@@ -13,13 +13,25 @@ static const char *TAG = "tulip";
 #define NS "tulip"
 #define KEY "settings"
 #define MAGIC 0x5453   // "TS"
-#define VERSION 1
+#define VERSION 2   // 2: the edge correction (cal_grid, cal_dx, cal_dy)
 
 typedef struct {
     uint16_t magic;
     uint16_t version;
     tulip_settings_t s;
 } blob_t;
+
+// version 1, as it was stored: kept so an update keeps the calibration
+typedef struct {
+    uint16_t magic;
+    uint16_t version;
+    struct {
+        uint8_t cal_valid;
+        float cal[6];
+        uint8_t brightness;
+        uint8_t cal_prompt;
+    } s;
+} blob_v1_t;
 
 tulip_settings_t g_tulip = {
     .cal = TOUCH_CAL_DEFAULT,
@@ -37,13 +49,26 @@ void tulip_settings_load(void) {
     if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) return;
     blob_t b;
     size_t len = sizeof b;
-    if (nvs_get_blob(h, KEY, &b, &len) == ESP_OK && len == sizeof b && b.magic == MAGIC &&
-        b.version == VERSION) {
+    esp_err_t got = nvs_get_blob(h, KEY, &b, &len);
+    if (got == ESP_OK && len == sizeof(blob_v1_t) && b.magic == MAGIC && b.version == 1) {
+        blob_v1_t o;
+        memcpy(&o, &b, sizeof o);
+        memset(&b, 0, sizeof b);
+        b.magic = MAGIC;
+        b.version = VERSION;
+        b.s.cal_valid = o.s.cal_valid;
+        memcpy(b.s.cal, o.s.cal, sizeof o.s.cal);
+        b.s.brightness = o.s.brightness;
+        b.s.cal_prompt = o.s.cal_prompt;
+        len = sizeof b;
+    }
+    if (got == ESP_OK && len == sizeof b && b.magic == MAGIC && b.version == VERSION) {
         g_tulip = b.s;
         if (g_tulip.brightness < 1 || g_tulip.brightness > 9) g_tulip.brightness = 9;
         if (!g_tulip.cal_valid) {
             const float def[6] = TOUCH_CAL_DEFAULT;
             memcpy(g_tulip.cal, def, sizeof def);
+            g_tulip.cal_grid = 0;
         }
     }
     nvs_close(h);

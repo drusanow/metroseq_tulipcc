@@ -71,3 +71,63 @@ bool touch_cal_solve(const float *rx, const float *ry, const float *sx, const fl
     fit->max_px = (float)worst;
     return fit->rms_px <= TOUCH_CAL_MAX_RMS_PX && fit->max_px <= TOUCH_CAL_MAX_ERR_PX;
 }
+
+// --- the edge correction (see touch_cal.h) -------------------------------------------
+
+bool touch_cal_solve_grid(const float *rx, const float *ry, int w, int h, touch_map_t *map,
+                          touch_cal_fit_t *fit) {
+    enum { N = TOUCH_GRID_N * TOUCH_GRID_N };
+    float sx[N], sy[N];
+    for (int r = 0; r < TOUCH_GRID_N; r++)
+        for (int c = 0; c < TOUCH_GRID_N; c++) {
+            sx[r * TOUCH_GRID_N + c] = (float)TOUCH_GRID_X(c, w);
+            sy[r * TOUCH_GRID_N + c] = (float)TOUCH_GRID_Y(r, h);
+        }
+    *fit = (touch_cal_fit_t){0};
+    map->grid = 0;
+    // the affine part: as touch_cal_solve(), with the looser limits a
+    // grid calibration allows
+    if (!touch_cal_solve(rx, ry, sx, sy, N, map->m, fit) &&
+        !(fit->rms_px > 0 && fit->rms_px <= TOUCH_GRID_MAX_RMS_PX && fit->max_px <= TOUCH_GRID_MAX_ERR_PX))
+        return false;
+    for (int i = 0; i < N; i++) {
+        float x, y;
+        touch_cal_apply(map->m, rx[i], ry[i], &x, &y);
+        map->dx[i] = sx[i] - x;
+        map->dy[i] = sy[i] - y;
+        if (fabsf(map->dx[i]) > TOUCH_GRID_MAX_PX || fabsf(map->dy[i]) > TOUCH_GRID_MAX_PX) return false;
+    }
+    map->grid = 1;
+    return true;
+}
+
+// where v falls between the grid lines a[0..2]: the cell and the fraction
+// across it. Past the outer lines (the last 40 px to the edge) the outer
+// cell's slope carries on a little way, as a panel's bend keeps growing.
+static void grid_pos(float v, float a0, float a1, float a2, int *cell, float *t) {
+    if (v <= a1) {
+        *cell = 0;
+        *t = (v - a0) / (a1 - a0);
+        if (*t < -0.25f) *t = -0.25f;
+        if (*t > 1) *t = 1;
+    } else {
+        *cell = 1;
+        *t = (v - a1) / (a2 - a1);
+        if (*t < 0) *t = 0;
+        if (*t > 1.25f) *t = 1.25f;
+    }
+}
+
+void touch_map_apply(const touch_map_t *map, int w, int h, float rx, float ry, float *x, float *y) {
+    touch_cal_apply(map->m, rx, ry, x, y);
+    if (!map->grid) return;
+    int cx, cy;
+    float tx, ty;
+    grid_pos(*x, TOUCH_GRID_X(0, w), TOUCH_GRID_X(1, w), TOUCH_GRID_X(2, w), &cx, &tx);
+    grid_pos(*y, TOUCH_GRID_Y(0, h), TOUCH_GRID_Y(1, h), TOUCH_GRID_Y(2, h), &cy, &ty);
+    const int n = TOUCH_GRID_N;
+    int i00 = cy * n + cx, i01 = i00 + 1, i10 = i00 + n, i11 = i10 + 1;
+    float w00 = (1 - tx) * (1 - ty), w01 = tx * (1 - ty), w10 = (1 - tx) * ty, w11 = tx * ty;
+    *x += w00 * map->dx[i00] + w01 * map->dx[i01] + w10 * map->dx[i10] + w11 * map->dx[i11];
+    *y += w00 * map->dy[i00] + w01 * map->dy[i01] + w10 * map->dy[i10] + w11 * map->dy[i11];
+}

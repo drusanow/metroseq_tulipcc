@@ -7,6 +7,7 @@
 #include "seq_clock.h"
 #include "studio/midi_parse.h"
 #include "seq_engine.h"
+#include "tulip/touch_aim.h"
 #include "tulip/touch_cal.h"
 
 static int failures;
@@ -303,6 +304,115 @@ static void test_touch_cal(void) {
            "rejected\n", worst);
 }
 
+// A panel that bends towards its edges: an affine map plus a smooth pull
+// that grows with the square of the distance from the centre, up to 14 px
+// at the top and bottom edges.
+static const float BENT[6] = {1.02f, 0.01f, -6.0f, -0.01f, 0.81f, -8.0f};
+static void bent_raw(float sx, float sy, float *rx, float *ry) {
+    float v = (sy - 300) / 300.0f, u = (sx - 512) / 512.0f;
+    float y = sy - 14.0f * v * fabsf(v) * (1 - 0.3f * u * u);   // where the panel says it is
+    float x = sx - 8.0f * u * fabsf(u);
+    // invert the affine map for that point
+    double det = BENT[0] * BENT[4] - BENT[1] * BENT[3];
+    double ax = x - BENT[2], ay = y - BENT[5];
+    *rx = (float)((BENT[4] * ax - BENT[1] * ay) / det);
+    *ry = (float)((-BENT[3] * ax + BENT[0] * ay) / det);
+}
+
+static void test_touch_grid(void) {
+    float rx[9], ry[9];
+    for (int i = 0; i < 9; i++)
+        bent_raw(TOUCH_GRID_X(i % 3, 1024), TOUCH_GRID_Y(i / 3, 600), &rx[i], &ry[i]);
+    touch_map_t map;
+    touch_cal_fit_t fit;
+    CHECK(touch_cal_solve_grid(rx, ry, 1024, 600, &map, &fit) && map.grid, "grid solve failed: rms %f",
+          fit.rms_px);
+    // the bottom bar (y 550..590) and the middle, affine alone vs with the grid
+    float worst_aff = 0, worst_grid = 0, bottom_grid = 0;
+    for (int y = 30; y <= 590; y += 20)
+        for (int x = 20; x <= 1000; x += 40) {
+            float r1, r2, ax, ay, gx, gy;
+            bent_raw((float)x, (float)y, &r1, &r2);
+            touch_cal_apply(map.m, r1, r2, &ax, &ay);
+            touch_map_apply(&map, 1024, 600, r1, r2, &gx, &gy);
+            float da = hypotf(ax - x, ay - y), dg = hypotf(gx - x, gy - y);
+            if (y >= 550 && da > worst_aff) worst_aff = da;
+            if (y >= 550 && dg > bottom_grid) bottom_grid = dg;
+            if (dg > worst_grid) worst_grid = dg;
+        }
+    CHECK(worst_grid < 3.0f && bottom_grid < worst_aff,
+          "grid didn't help: worst %f px with it, bottom row %f px with, %f px without", worst_grid,
+          bottom_grid, worst_aff);
+    // the targets themselves come out exact
+    float x, y;
+    touch_map_apply(&map, 1024, 600, rx[7], ry[7], &x, &y);
+    CHECK(fabsf(x - 512) < 0.5f && fabsf(y - 560) < 0.5f, "bottom-middle target off: %f %f", x, y);
+    // one tap 50 px off -> refused (the correction would exceed 40 px)
+    rx[8] += 60;
+    CHECK(!touch_cal_solve_grid(rx, ry, 1024, 600, &map, &fit), "bad grid tap accepted");
+    // no grid: exactly the affine map
+    touch_map_t aff = {.m = TOUCH_CAL_DEFAULT};
+    touch_map_apply(&aff, 1024, 600, 500, 400, &x, &y);
+    CHECK(fabsf(x - 498) < 0.01f && fabsf(y - 310.4f) < 0.01f, "affine-only map changed: %f %f", x, y);
+    printf("touch grid: 9 targets, bottom row %.1f px (affine alone %.1f px), worst %.1f px anywhere, "
+           "bad tap refused\n", bottom_grid, worst_aff, worst_grid);
+}
+
+// --- touch_aim: two buttons 100 x 40 with a 6 px gap, at the bottom ------------------
+static bool on_btn(int x, int y, void *ctx) {
+    (void)ctx;
+    bool row = y >= 550 && y < 590;
+    return row && ((x >= 100 && x < 200) || (x >= 206 && x < 306));
+}
+
+static int feed(touch_aim_t *a, int x, int y, bool p, uint32_t t, aim_ev_t *out) {
+    aim_ev_t in = {(int16_t)x, (int16_t)y, p};
+    return touch_aim_feed(a, &in, t, out);
+}
+
+static void test_touch_aim(void) {
+    touch_aim_t a;
+    aim_ev_t o[2];
+    touch_aim_init(&a, on_btn, NULL, 1024, 600);
+    // on the button: straight through, at once
+    CHECK(feed(&a, 150, 570, true, 0, o) == 1 && o[0].pressed && o[0].x == 150 && o[0].y == 570, "direct");
+    CHECK(feed(&a, 152, 571, true, 5, o) == 1 && o[0].x == 152, "direct move");
+    CHECK(feed(&a, 152, 571, false, 10, o) == 1 && !o[0].pressed, "direct release");
+    // 12 px below the row (an off calibration): snapped up onto it at once
+    CHECK(feed(&a, 150, 599, true, 100, o) == 1 && o[0].pressed && on_btn(o[0].x, o[0].y, NULL),
+          "snap from below: %d,%d", o[0].x, o[0].y);
+    int dx = o[0].x - 150, dy = o[0].y - 599;
+    CHECK(feed(&a, 150, 597, true, 105, o) == 1 && o[0].x == 150 + dx && o[0].y == 597 + dy,
+          "snapped finger keeps its offset: %d,%d (+%d,%d)", o[0].x, o[0].y, dx, dy);
+    feed(&a, 150, 597, false, 110, o);
+    // in the 6 px gap: the nearer button
+    CHECK(feed(&a, 201, 570, true, 200, o) == 1 && on_btn(o[0].x, o[0].y, NULL) && o[0].x < 203,
+          "gap snap: %d", o[0].x);
+    feed(&a, 201, 570, false, 205, o);
+    // far from anything, held still: nothing at first...
+    CHECK(feed(&a, 150, 515, true, 300, o) == 0, "held back");
+    // ...the samples wander and settle 20 px nearer; at 150 ms it's found
+    int n = 0;
+    for (uint32_t t = 305; t < 460 && !n; t += 5) n = feed(&a, 150, 525, true, t, o);
+    CHECK(n == 1 && o[0].pressed && on_btn(o[0].x, o[0].y, NULL), "aim found the button");
+    CHECK(feed(&a, 150, 525, false, 470, o) == 1 && !o[0].pressed, "aim release");
+    // a quick tap on nothing still arrives as a press and a release
+    CHECK(feed(&a, 600, 300, true, 600, o) == 0 && feed(&a, 600, 300, false, 640, o) == 2 && o[0].pressed &&
+              !o[1].pressed && o[0].x == 600,
+          "tap on nothing");
+    // a drag from nothing: through once it moves, from where it is
+    feed(&a, 600, 300, true, 700, o);
+    CHECK(feed(&a, 600, 340, true, 720, o) == 1 && o[0].pressed && o[0].y == 340, "drag passes");
+    CHECK(feed(&a, 600, 380, true, 740, o) == 1 && o[0].y == 380, "drag follows");
+    feed(&a, 600, 380, false, 760, o);
+    // held still with no event at all: the tick finds it
+    CHECK(feed(&a, 150, 518, true, 800, o) == 0 && touch_aim_tick(&a, 900, o) == 0 &&
+              touch_aim_tick(&a, 960, o) == 1 && on_btn(o[0].x, o[0].y, NULL),
+          "tick aim");
+    feed(&a, 150, 518, false, 1000, o);
+    printf("touch aim: direct, snap from below and in a gap, hold-to-aim, taps and drags on nothing\n");
+}
+
 // A new pattern (a preset) waits for the top of TRK 1's sequence, then the
 // tracks start over with it on that very 1/16.
 static pattern_t next_pat;
@@ -353,6 +463,8 @@ int main(void) {
     test_tempo_change_and_dropout();
     test_master_equivalence();
     test_touch_cal();
+    test_touch_grid();
+    test_touch_aim();
     printf(failures ? "\n%d FAILURES\n" : "\nall midi/touch tests passed\n", failures);
     return failures ? 1 : 0;
 }

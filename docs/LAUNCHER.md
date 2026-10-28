@@ -141,7 +141,10 @@ tulip_display_start(&(tulip_display_cfg_t){
 `tulip_hal` gives every app:
 * the RGB332 panel with LVGL 9 (pick the core);
 * GT911 touch with the shared calibration and the calibration screen
-  (`tulip/touchcal_ui.h`);
+  (`tulip/touchcal_ui.h`), and help finding buttons (`tulip/touch_aim.h`):
+  * a touch just beside a button, or in a gap between two, presses the nearer one;
+  * a touch on nothing, held still for 0.15 s, presses the button its averaged
+    position is on;
 * the shared I2C bus;
 * `/files` access;
 * shared settings;
@@ -187,7 +190,11 @@ shows `http://tulip.local`, the IP address, and a 4-digit **PIN**. HOME shows th
 
 * **SETTINGS:**
   * brightness;
-  * *Calibrate touch*, the 5-target calibration, which is shared by all apps;
+  * *Calibrate touch*, the 9-target calibration, which is shared by all apps. The
+    targets sit close to the edges, and what a straight-line fit still gets wrong at
+    each one is kept as an edge correction, so the bottom row of buttons lines up too.
+    Recalibrate once after this update: the old 5-target calibration has no edge
+    correction;
   * *Cal prompt at start*, the offer at power-on to calibrate (tap left) or skip (tap
     right, or wait 5 s);
   * auto-launch;

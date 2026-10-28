@@ -7,6 +7,7 @@ idf_component_register(
         "src/lv_mem_psram.c"
         "src/settings.c"
         "src/sys.c"
+        "src/touch_aim.c"
         "src/touch_cal.c"
         "src/touchcal_ui.c"
     INCLUDE_DIRS "include"

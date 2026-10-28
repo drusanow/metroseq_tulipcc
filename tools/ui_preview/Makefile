@@ -12,7 +12,7 @@ CJ   = ../../tests/vendor/cjson
 LA   = ../../launcher/main
 BASE = -O1 -g -w -std=gnu11 -DLV_CONF_INCLUDE_SIMPLE -Ibuild -Istub -I$(LVGL) -I$(HAL)/include
 LV_SRC := $(shell find $(LVGL)/src -name '*.c')
-HAL_UI = $(HAL)/src/touch_cal.c $(HAL)/src/touchcal_ui.c harness.c
+HAL_UI = $(HAL)/src/touch_cal.c $(HAL)/src/touch_aim.c $(HAL)/src/touchcal_ui.c harness.c
 
 ST_SRC = studio_preview.c studio_stubs.c $(ST)/src/shell.c $(ST)/src/widgets.c $(ST)/src/studio.c $(ST)/src/patch.c $(ST)/src/io_panel.c \
          $(ST)/src/tclock.c $(wildcard $(MS)/ui/*.c) $(MS)/engine/seq_model.c $(MS)/engine/seq_json.c \

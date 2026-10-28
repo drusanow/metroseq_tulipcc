@@ -26,6 +26,7 @@
 #include "lvgl.h"
 #include "tulip/gt911.h"
 #include "tulip/settings.h"
+#include "tulip/touch_aim.h"
 
 static const char *TAG = "disp";
 
@@ -123,26 +124,66 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *a, uint8_t *px) {
 }
 
 // Touch: drain queued events one at a time so a tap that happened while
-// we were busy rendering is still seen as press + release.
+// we were busy rendering is still seen as press + release - through
+// touch_aim (tulip/touch_aim.h), which helps a touch that lands beside a
+// button find it.
 static touch_raw_hook_t s_hook;
 
 void display_set_touch_hook(touch_raw_hook_t hook) { s_hook = hook; }
 
+// Something to press at x, y: a clickable object that something listens to
+// (a button, a slider, a list), or that scrolls - not the screen itself,
+// nor a bare container (lv_obj_create() makes those clickable too).
+static bool aim_hit(int x, int y, void *ctx) {
+    (void)ctx;
+    lv_display_t *d = lv_display_get_default();
+    lv_point_t p = {x, y};
+    lv_obj_t *scr = lv_display_get_screen_active(d);
+    lv_obj_t *layers[3] = {lv_display_get_layer_sys(d), lv_display_get_layer_top(d), scr};
+    lv_obj_t *o = NULL;
+    for (int i = 0; i < 3 && !o; i++) o = lv_indev_search_obj(layers[i], &p);
+    if (!o || o == scr || o == layers[0] || o == layers[1]) return false;
+    if (lv_obj_get_event_count(o) > 0) return true;
+    return lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) &&
+           (lv_obj_get_scroll_top(o) > 0 || lv_obj_get_scroll_bottom(o) > 0 ||
+            lv_obj_get_scroll_left(o) > 0 || lv_obj_get_scroll_right(o) > 0);
+}
+
+// what LVGL is given next (touch_aim can turn one touch event into two)
+static touch_aim_t s_aim;
+static aim_ev_t s_out[4];
+static uint8_t s_out_n, s_out_i;
+static aim_ev_t s_last_out;
+
+static void out_push(const aim_ev_t *e, int n) {
+    for (int i = 0; i < n && s_out_n < 4; i++) s_out[s_out_n++] = e[i];
+}
+
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
-    static touch_event_t last;
-    touch_event_t ev;
-    if (touch_next_event(&ev)) {
-        if (s_hook && s_hook(&ev)) {
-            // the calibration screen consumed it: LVGL sees no touch
-            last.pressed = false;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (s_out_i >= s_out_n) {
+        s_out_i = s_out_n = 0;
+        touch_event_t ev;
+        aim_ev_t o[2];
+        if (touch_next_event(&ev)) {
+            if (s_hook && s_hook(&ev)) {
+                // the calibration screen consumed it: LVGL sees no touch
+                o[0] = (aim_ev_t){s_last_out.x, s_last_out.y, false};
+                touch_aim_init(&s_aim, aim_hit, NULL, LCD_H_RES, LCD_V_RES);
+                out_push(o, 1);
+            } else {
+                aim_ev_t in = {ev.x, ev.y, ev.pressed};
+                out_push(o, touch_aim_feed(&s_aim, &in, now, o));
+            }
         } else {
-            last = ev;
+            out_push(o, touch_aim_tick(&s_aim, now, o));
         }
     }
-    data->point.x = last.x;
-    data->point.y = last.y;
-    data->state = last.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    data->continue_reading = touch_events_pending();
+    if (s_out_i < s_out_n) s_last_out = s_out[s_out_i++];
+    data->point.x = s_last_out.x;
+    data->point.y = s_last_out.y;
+    data->state = s_last_out.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->continue_reading = s_out_i < s_out_n || touch_events_pending();
 }
 
 static uint32_t tick_cb(void) {
@@ -183,6 +224,7 @@ static void lvgl_task(void *arg) {
     lv_display_set_buffers(disp, buf, NULL, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
 
+    touch_aim_init(&s_aim, aim_hit, NULL, LCD_H_RES, LCD_V_RES);
     lv_indev_t *indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);

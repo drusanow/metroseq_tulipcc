@@ -1,6 +1,7 @@
 // touchcal_ui.h - the touchscreen calibration screen (LVGL task only).
 //
-// Five targets, a least-squares fit (tulip/touch_cal.h), a live test, then
+// Nine targets (a 3 x 3 grid near the edges), a least-squares fit plus an
+// edge correction (tulip/touch_cal.h), a live test, then
 // SAVE / RETRY / CANCEL; 20 s without a touch cancels. The prompt and the
 // targets read raw coordinates and use half-screen choices, so they work
 // even when the current calibration is badly wrong. SAVE stores the map

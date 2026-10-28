@@ -17,9 +17,13 @@ bool gt911_ready(void);
 // The controller's configured output range (raw coordinate maxima).
 void gt911_raw_max(int *x_max, int *y_max);
 
-// Raw -> screen calibration (engine/touch_cal.h layout). Safe from any task.
+// Raw -> screen calibration (tulip/touch_cal.h). Safe from any task.
+// set_cal sets the affine map alone (no edge correction).
 void gt911_set_cal(const float m[6]);
 void gt911_get_cal(float m[6]);
+#include "tulip/touch_cal.h"
+void gt911_set_map(const touch_map_t *map);
+void gt911_get_map(touch_map_t *map);
 
 // While set, every touch event goes to `hook` first; if it returns true the
 // event is consumed and LVGL sees no touch (used by touch calibration,

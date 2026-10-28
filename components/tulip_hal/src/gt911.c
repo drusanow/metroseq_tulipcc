@@ -7,6 +7,7 @@
 #include "tulip/settings.h"
 #include "tulip/touch_cal.h"
 #include <stdlib.h>
+#include <string.h>
 
 #include "esp_log.h"
 #include "freertos/queue.h"
@@ -33,17 +34,30 @@ static int64_t s_last_sample, s_prev_sample;
 static int s_xmax = LCD_H_RES, s_ymax = LCD_V_RES;
 
 static portMUX_TYPE s_cal_mux = portMUX_INITIALIZER_UNLOCKED;
-static float s_cal[6] = TOUCH_CAL_DEFAULT;
+static touch_map_t s_map = {.m = TOUCH_CAL_DEFAULT};
+
+void gt911_set_map(const touch_map_t *map) {
+    taskENTER_CRITICAL(&s_cal_mux);
+    s_map = *map;
+    taskEXIT_CRITICAL(&s_cal_mux);
+}
+
+void gt911_get_map(touch_map_t *map) {
+    taskENTER_CRITICAL(&s_cal_mux);
+    *map = s_map;
+    taskEXIT_CRITICAL(&s_cal_mux);
+}
 
 void gt911_set_cal(const float m[6]) {
     taskENTER_CRITICAL(&s_cal_mux);
-    for (int i = 0; i < 6; i++) s_cal[i] = m[i];
+    for (int i = 0; i < 6; i++) s_map.m[i] = m[i];
+    s_map.grid = 0;
     taskEXIT_CRITICAL(&s_cal_mux);
 }
 
 void gt911_get_cal(float m[6]) {
     taskENTER_CRITICAL(&s_cal_mux);
-    for (int i = 0; i < 6; i++) m[i] = s_cal[i];
+    for (int i = 0; i < 6; i++) m[i] = s_map.m[i];
     taskEXIT_CRITICAL(&s_cal_mux);
 }
 
@@ -79,7 +93,12 @@ bool gt911_ready(void) { return s_dev != NULL; }
 
 bool gt911_init(i2c_master_bus_handle_t bus, uint32_t scl_hz) {
     s_hz = scl_hz;
-    gt911_set_cal(g_tulip.cal);   // the device-wide calibration
+    // the device-wide calibration
+    touch_map_t map = {.grid = g_tulip.cal_grid};
+    memcpy(map.m, g_tulip.cal, sizeof map.m);
+    memcpy(map.dx, g_tulip.cal_dx, sizeof map.dx);
+    memcpy(map.dy, g_tulip.cal_dy, sizeof map.dy);
+    gt911_set_map(&map);
     if (!s_q) s_q = xQueueCreate(32, sizeof(touch_event_t));
 
     // R11 needs the reset pin toggled twice before the controller answers
@@ -154,9 +173,10 @@ bool gt911_poll(int64_t now_us) {
         }
         int rx = p[1] | (p[2] << 8);
         int ry = p[3] | (p[4] << 8);
-        float m[6], fx, fy;
-        gt911_get_cal(m);
-        touch_cal_apply(m, (float)rx, (float)ry, &fx, &fy);
+        touch_map_t map;
+        float fx, fy;
+        gt911_get_map(&map);
+        touch_map_apply(&map, LCD_H_RES, LCD_V_RES, (float)rx, (float)ry, &fx, &fy);
         int x = (int)(fx + 0.5f), y = (int)(fy + 0.5f);
         // clamp edge touches onto the screen instead of dropping them
         x = x < 0 ? 0 : (x >= LCD_H_RES ? LCD_H_RES - 1 : x);

@@ -100,15 +100,18 @@ static void ui_header_info(const char *t) {
     if (s_msg) s_msg(t);
 }
 
-#define NPTS              5
+#define NPTS              (TOUCH_GRID_N * TOUCH_GRID_N)   // 9: a 3 x 3 grid near the edges
 #define PROMPT_MS         5000
 #define TOUCH_WAIT_MS     10000   // give up on the prompt if touch never comes up
 #define RESULT_TIMEOUT_MS 20000
 #define MAX_SAMPLES       48
 #define QLEN              16
 
-static const int16_t TX[NPTS] = {64, LCD_W - 64, LCD_W - 64, 64, LCD_W / 2};
-static const int16_t TY[NPTS] = {64, 64, LCD_H - 64, LCD_H - 64, LCD_H / 2};
+// row by row, as touch_cal_solve_grid() takes them
+#define GX(i) TOUCH_GRID_X((i) % TOUCH_GRID_N, LCD_W)
+#define GY(i) TOUCH_GRID_Y((i) / TOUCH_GRID_N, LCD_H)
+static const int16_t TX[NPTS] = {GX(0), GX(1), GX(2), GX(3), GX(4), GX(5), GX(6), GX(7), GX(8)};
+static const int16_t TY[NPTS] = {GY(0), GY(1), GY(2), GY(3), GY(4), GY(5), GY(6), GY(7), GY(8)};
 
 typedef enum { TC_OFF, TC_PROMPT, TC_TARGET, TC_FAILED, TC_RESULT } tc_state_t;
 
@@ -126,7 +129,7 @@ static struct {
     int ns;
     bool finger_down;   // a press that began before this step: ignore it
     bool pressing;
-    float old_cal[6], new_cal[6];
+    touch_map_t old_map, new_map;
     touch_cal_fit_t fit;
     uint32_t t0, last_touch, created;
     int countdown;
@@ -172,7 +175,12 @@ static void finish(void);
 static void begin_targets(bool finger_down);
 
 static void btn_save(intptr_t a) {
-    for (int i = 0; i < 6; i++) g_tulip.cal[i] = T.new_cal[i];
+    for (int i = 0; i < 6; i++) g_tulip.cal[i] = T.new_map.m[i];
+    g_tulip.cal_grid = T.new_map.grid;
+    for (int i = 0; i < NPTS; i++) {
+        g_tulip.cal_dx[i] = T.new_map.dx[i];
+        g_tulip.cal_dy[i] = T.new_map.dy[i];
+    }
     g_tulip.cal_valid = 1;
     tulip_settings_save();
     ui_header_info("touch calibration saved");
@@ -180,12 +188,12 @@ static void btn_save(intptr_t a) {
 }
 
 static void btn_retry(intptr_t a) {
-    gt911_set_cal(T.old_cal);
+    gt911_set_map(&T.old_map);
     begin_targets(true);   // the RETRY press itself is still down
 }
 
 static void btn_cancel(intptr_t a) {
-    gt911_set_cal(T.old_cal);
+    gt911_set_map(&T.old_map);
     ui_header_info("touch calibration unchanged");
     finish();
 }
@@ -262,7 +270,7 @@ static void open_overlay(void) {
     lv_obj_move_foreground(T.ov);
     T.qh = T.qt = 0;
     display_set_touch_hook(hook);
-    gt911_get_cal(T.old_cal);
+    gt911_get_map(&T.old_map);
 }
 
 static void finish(void) {
@@ -329,10 +337,8 @@ static void begin_targets(bool finger_down) {
 }
 
 static void solve(void) {
-    static const float sx[NPTS] = {TX[0], TX[1], TX[2], TX[3], TX[4]};
-    static const float sy[NPTS] = {TY[0], TY[1], TY[2], TY[3], TY[4]};
     hide_all();
-    bool ok = touch_cal_solve(T.rx, T.ry, sx, sy, NPTS, T.new_cal, &T.fit);
+    bool ok = touch_cal_solve_grid(T.rx, T.ry, LCD_W, LCD_H, &T.new_map, &T.fit);
     if (!ok) {
         T.st = TC_FAILED;
         char l[64];
@@ -340,16 +346,16 @@ static void solve(void) {
         halves(l, "KEEP CURRENT\nCALIBRATION\n\ntap this side");
         return;
     }
-    gt911_set_cal(T.new_cal);   // live, so the test below uses it
+    gt911_set_map(&T.new_map);   // live, so the test below uses it
     T.st = TC_RESULT;
     T.last_touch = lv_tick_get();
     for (int i = 0; i < NPTS; i++) show(T.marks[i], true);
     show(T.save_b->obj, true);
     show(T.retry_b->obj, true);
     show(T.cancel_b->obj, true);
-    char buf[96];
-    snprintf(buf, sizeof buf, "Calibrated: average error %.1f px, worst %.1f px", T.fit.rms_px,
-             T.fit.max_px);
+    char buf[128];
+    snprintf(buf, sizeof buf, "Calibrated, edges corrected (straight fit: %.1f px average, %.1f px worst)",
+             T.fit.rms_px, T.fit.max_px);
     lv_label_set_text(T.title, buf);
     lv_label_set_text(T.sub, "Touch around the screen to test - the green dot should sit under "
                              "your finger.\nNo touch for 20 s cancels.");

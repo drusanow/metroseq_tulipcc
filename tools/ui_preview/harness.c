@@ -15,6 +15,9 @@
 static float s_cal[6] = TOUCH_CAL_DEFAULT;
 void gt911_set_cal(const float m[6]) { memcpy(s_cal, m, sizeof s_cal); }
 void gt911_get_cal(float m[6]) { memcpy(m, s_cal, sizeof s_cal); }
+static touch_map_t s_map;
+void gt911_set_map(const touch_map_t *m) { s_map = *m; }
+void gt911_get_map(touch_map_t *m) { *m = s_map; }
 void gt911_raw_max(int *x, int *y) { *x = 1024; *y = 750; }
 bool gt911_ready(void) { return true; }
 static touch_raw_hook_t s_hook;

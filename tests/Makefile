@@ -12,7 +12,7 @@ HAL = ../components/tulip_hal
 LCORE = ../launcher/main/core
 CFLAGS ?= -O2 -g -Wall -Wextra -Werror -std=c11 -fsanitize=address,undefined
 CFLAGS += -I$(ENGINE) -I$(HAL)/include -I$(LCORE) -I$(STUDIO)/include
-SRC = $(ENGINE)/seq_engine.c $(ENGINE)/seq_model.c $(ENGINE)/seq_clock.c $(HAL)/src/touch_cal.c \
+SRC = $(ENGINE)/seq_engine.c $(ENGINE)/seq_model.c $(ENGINE)/seq_clock.c $(HAL)/src/touch_cal.c $(HAL)/src/touch_aim.c \
       $(STUDIO)/src/tclock.c $(STUDIO)/src/midi_parse.c
 HDR = $(wildcard $(ENGINE)/*.h)
 

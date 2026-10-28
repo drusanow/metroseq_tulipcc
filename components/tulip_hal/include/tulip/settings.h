@@ -11,6 +11,8 @@ typedef struct {
     float cal[6];          // raw -> screen affine map (tulip/touch_cal.h)
     uint8_t brightness;    // 1..9 (0 = not set: full)
     uint8_t cal_prompt;    // launcher: offer calibration at power-on
+    uint8_t cal_grid;      // cal_dx / cal_dy hold the edge correction (9 targets)
+    float cal_dx[9], cal_dy[9];
 } tulip_settings_t;
 
 extern tulip_settings_t g_tulip;
