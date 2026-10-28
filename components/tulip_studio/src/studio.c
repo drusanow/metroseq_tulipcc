@@ -17,6 +17,8 @@ static const char *TAG = "studio";
 const tmod_t *g_mods[STUDIO_MAX_MODULES];
 int g_nmods;
 volatile bool g_enabled[STUDIO_MAX_MODULES];
+volatile bool g_started[STUDIO_MAX_MODULES];
+char g_single[24];
 studio_cfg_t g_cfg;
 studio_mix_t g_mix;
 
@@ -37,6 +39,11 @@ int studio_module_count(void) { return g_nmods; }
 const tmod_t *studio_module(int i) { return i >= 0 && i < g_nmods ? g_mods[i] : NULL; }
 bool studio_module_enabled(int i) { return i >= 0 && i < g_nmods && g_enabled[i]; }
 bool studio_multi(void) { return g_nmods > 1; }
+bool studio_module_started(int i) { return i >= 0 && i < g_nmods && g_started[i]; }
+
+// the UI's view of ON / OFF (the rt task's g_enabled follows a moment later)
+static bool s_on[STUDIO_MAX_MODULES];
+bool studio_module_on(int i) { return i >= 0 && i < g_nmods && s_on[i]; }
 
 int studio_module_index(const tmod_t *m) {
     for (int i = 0; i < g_nmods; i++)
@@ -48,11 +55,11 @@ const char *studio_files_root(void) { return s_files ? TULIP_FS_ROOT : NULL; }
 
 // --- settings (NVS, one record per app image) -------------------------------------------
 
-#define CFG_VERSION 1
+#define CFG_VERSION 2
 
 static void ns_name(char *out, size_t n) {
-    // "s_" + project name: metroseq.bin and studio.bin keep separate settings
-    snprintf(out, n, "s_%.12s", esp_app_get_description()->project_name);
+    // the Studio and each app on its own keep separate settings
+    snprintf(out, n, "s_%.12s", g_single[0] ? g_single : esp_app_get_description()->project_name);
 }
 
 static void cfg_defaults(void) {
@@ -61,8 +68,10 @@ static void cfg_defaults(void) {
     g_cfg.clock_src = CLOCK_SRC_INT;
     g_cfg.mmc = 1;
     g_cfg.volume = 8;
-    g_cfg.open_mask = 0xFF;
+    g_cfg.open_mask = 0;
     g_cfg.shown = 0;
+    g_cfg.cv_clock = 1;
+    g_cfg.cv_div = 2;
     for (int m = 0; m < STUDIO_MAX_MODULES; m++)
         for (int k = 0; k < STUDIO_MAX_OUTS; k++) {
             g_cfg.route[m][k] = ROUTE_NONE;
@@ -93,6 +102,7 @@ void cfg_load(void) {
     nvs_close(h);
     if (g_cfg.bpm_x100 < TC_MIN_BPM_X100 || g_cfg.bpm_x100 > TC_MAX_BPM_X100) g_cfg.bpm_x100 = 12000;
     if (g_cfg.volume > 10) g_cfg.volume = 8;
+    if (g_cfg.cv_div != 2 && g_cfg.cv_div != 4 && g_cfg.cv_div != 8) g_cfg.cv_div = 2;
 }
 
 static void cfg_save_now(void) {
@@ -202,19 +212,32 @@ bool studio_note_out(const tmod_t *m, int track, const tnote_t *n) {
 
 void studio_run(const tmod_t *const *mods, int n) {
     if (n > STUDIO_MAX_MODULES) n = STUDIO_MAX_MODULES;
-    g_nmods = n;
-    for (int i = 0; i < n; i++) g_mods[i] = mods[i];
-
     tulip_app_init();       // under the launcher: a reset goes back to it
-    tulip_settings_load();  // device-wide touch calibration + brightness
+    tulip_settings_load();  // device-wide touch calibration + brightness (and NVS)
+    // one app on its own, or the Studio (the launcher's choice)
+    char mode[24];
+    tulip_boot_mode_get(mode, sizeof mode);
+    g_nmods = 0;
+    for (int i = 0; i < n; i++)
+        if (n > 1 && mode[0] && !strcmp(mode, mods[i]->name)) {
+            g_mods[g_nmods++] = mods[i];
+            snprintf(g_single, sizeof g_single, "%s", mods[i]->name);
+        }
+    if (!g_nmods)
+        for (int i = 0; i < n; i++) g_mods[g_nmods++] = mods[i];
+    if (g_nmods == 1 && !g_single[0]) snprintf(g_single, sizeof g_single, "%s", g_mods[0]->name);
+    n = g_nmods;
+
     cfg_load();
     s_files = tulip_fs_mount(false);
     if (!s_files) ESP_LOGW(TAG, "no /files: app data can't be saved");
 
-    for (int i = 0; i < n; i++) {
-        // single app: always on. Studio: as the user left it.
-        g_enabled[i] = n == 1 || (g_cfg.open_mask & (1u << i));
-        if (g_mods[i]->init) g_mods[i]->init();
+    // on its own, the app starts now; in the Studio, every app is off
+    // until it's switched on
+    if (n == 1) {
+        g_enabled[0] = s_on[0] = true;
+        if (g_mods[0]->init) g_mods[0]->init();
+        g_started[0] = true;   // rt_init() runs as the rt task starts
     }
     rt_start();
     while (!rt_ready()) vTaskDelay(pdMS_TO_TICKS(5));
@@ -222,5 +245,22 @@ void studio_run(const tmod_t *const *mods, int n) {
     // core 0: panel + LVGL + every app's UI
     tulip_display_start(&(tulip_display_cfg_t){
         .core = 0, .priority = 4, .ui_create = shell_ui_create, .ui_poll = shell_ui_poll});
-    ESP_LOGI(TAG, "%d app%s running", n, n == 1 ? "" : "s");
+    if (n == 1)
+        ESP_LOGI(TAG, "%s on its own", g_mods[0]->title);
+    else
+        ESP_LOGI(TAG, "the Studio: %d apps, all off", n);
+}
+
+// UI task. Starting an app: its init() here, then rt_init() and the
+// tempo in the rt task (HC_START), then it's switched on - the queue keeps
+// that order, so no hook of it runs before it's ready.
+void studio_module_set_on(int i, bool on) {
+    if (i < 0 || i >= g_nmods || s_on[i] == on) return;
+    s_on[i] = on;
+    if (on && !g_started[i]) {
+        g_started[i] = true;   // (UI side: init() never runs twice)
+        if (g_mods[i]->init) g_mods[i]->init();
+        rt_post(HC_START, (uint8_t)i, 0, 0);
+    }
+    rt_post(HC_ENABLE, (uint8_t)i, 0, on);
 }

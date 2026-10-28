@@ -90,7 +90,7 @@ cJSON *studio_patch_to_json(const char *name) {
     for (int i = 0; i < g_nmods; i++) {
         const tmod_t *m = g_mods[i];
         cJSON *a = cJSON_AddObjectToObject(apps, m->name);
-        cJSON_AddBoolToObject(a, "open", g_enabled[i]);
+        cJSON_AddBoolToObject(a, "open", studio_module_on(i));
         if (m->flags & TMOD_F_AUDIO) {
             cJSON_AddNumberToObject(a, "level", studio_mix_level(i));
             cJSON_AddBoolToObject(a, "mute", studio_mix_muted(i));
@@ -103,8 +103,9 @@ cJSON *studio_patch_to_json(const char *name) {
                 cJSON_AddItemToArray(r, x);
             }
         }
-        // closed apps keep their settings too: they come back when opened
-        if (m->patch_save) {
+        // an app switched off keeps its settings too (once it has run): they
+        // come back when it's switched on; one never started has none
+        if (m->patch_save && studio_module_started(i)) {
             cJSON *st = m->patch_save();
             if (st) cJSON_AddItemToObject(a, "state", st);
         }
@@ -127,13 +128,15 @@ void studio_patch_from_json(const cJSON *o) {
         const tmod_t *m = g_mods[i];
         const cJSON *a = cJSON_GetObjectItemCaseSensitive(apps, m->name);
         if (!cJSON_IsObject(a)) continue;
-        // the app's own state first, so it's ready the moment it opens
-        const cJSON *st = cJSON_GetObjectItemCaseSensitive(a, "state");
-        if (m->patch_load && cJSON_IsObject(st)) m->patch_load(st);
+        // switch it on or off first: an app's state can only be loaded once
+        // it has been started (init() has set it up); one left off that never
+        // ran is skipped and stays off
         if (studio_multi()) {
             v = cJSON_GetObjectItemCaseSensitive(a, "open");
             if (cJSON_IsBool(v)) shell_set_open(i, cJSON_IsTrue(v));
         }
+        const cJSON *st = cJSON_GetObjectItemCaseSensitive(a, "state");
+        if (m->patch_load && cJSON_IsObject(st) && studio_module_started(i)) m->patch_load(st);
         if (m->flags & TMOD_F_AUDIO) {
             studio_mix_set_level(i, num(a, "level", studio_mix_level(i)));
             v = cJSON_GetObjectItemCaseSensitive(a, "mute");

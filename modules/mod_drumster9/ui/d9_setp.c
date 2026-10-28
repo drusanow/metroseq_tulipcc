@@ -1,4 +1,5 @@
-// d9_setp.c - the SET page: projects, and the setup (clock, MIDI, CV clock).
+// d9_setp.c - the SET page: projects, and the setup (the runtime's I/O panel:
+// clock, MIDI clock out, the CV clock; then MIDI notes in).
 //
 // Projects are the Python's: /files/drumster9/tulipdrums_projects.json, so
 // a library copied from the old Tulip's /user loads as it is. A project is
@@ -8,6 +9,7 @@
 #include <string.h>
 
 #include "d9_ui_int.h"
+#include "mod_drumster9.h"
 
 #define NLIST 16
 #define LIST_Y 40
@@ -15,7 +17,7 @@
 
 static struct {
     lv_obj_t *item[NLIST], *del, *msg, *empty;
-    lv_obj_t *clk_int, *clk_midi, *ch, *cv_on, *cv_div[3], *cv_v1[2], *cv_status, *samples;
+    lv_obj_t *ch, *samples;
     int sel;
     bool del_armed;
 } P = {.sel = -1};
@@ -47,9 +49,6 @@ static void refresh_list(void) {
 }
 
 static void refresh_setup(void) {
-    int src = studio_clock_src();
-    sw_btn_set(P.clk_int, src == CLOCK_SRC_INT);
-    sw_btn_set(P.clk_midi, src == CLOCK_SRC_MIDI);
     char t[48];
     if (g_d9set.midi_ch < 0)
         snprintf(t, sizeof t, "OFF");
@@ -58,14 +57,6 @@ static void refresh_setup(void) {
     else
         snprintf(t, sizeof t, "CH %d", g_d9set.midi_ch);
     lv_label_set_text(P.ch, t);
-    if (P.cv_on) {
-        sw_btn_set(P.cv_on, g_d9set.cv_on);
-        sw_btn_text(P.cv_on, g_d9set.cv_on ? "ON" : "OFF");
-        static const uint8_t DIV[3] = {2, 4, 8};
-        for (int i = 0; i < 3; i++) sw_btn_set(P.cv_div[i], g_d9set.cv_div == DIV[i]);
-        for (int i = 0; i < 2; i++) sw_btn_set(P.cv_v1[i], g_d9set.cv_vout1 == i);
-        lv_label_set_text(P.cv_status, !g_d9set.cv_on ? "off" : g_d9s.cv_present ? "DAC 0x59 found" : "no DAC on the I2C port");
-    }
     if (g_d9s.samples_ok)
         snprintf(t, sizeof t, "%d samples in %d banks", g_d9ix.nsamples, g_d9ix.nbanks);
     else
@@ -146,33 +137,10 @@ static void del_cb(void *ud) {
 
 // --- setup ---------------------------------------------------------------------------------------
 
-static void clock_cb(void *ud) {
-    studio_set_clock_src((int)(intptr_t)ud);
-    refresh_setup();
-}
-
 static void ch_cb(void *ud) {
     int c = g_d9set.midi_ch + ((intptr_t)ud & 1 ? 1 : -1);
     g_d9set.midi_ch = (int8_t)(c < -1 ? 16 : (c > 16 ? -1 : c));
     d9_settings_save();
-    refresh_setup();
-}
-
-static void cv_cb(void *ud) {
-    g_d9set.cv_on = !g_d9set.cv_on;
-    d9_cv_apply();
-    refresh_setup();
-}
-
-static void div_cb(void *ud) {
-    g_d9set.cv_div = (uint8_t)(intptr_t)ud;
-    d9_cv_apply();
-    refresh_setup();
-}
-
-static void v1_cb(void *ud) {
-    g_d9set.cv_vout1 = (uint8_t)(intptr_t)ud;
-    d9_cv_apply();
     refresh_setup();
 }
 
@@ -199,36 +167,16 @@ void d9_set_page_create(lv_obj_t *p) {
     const int x = 676;
     sw_line(p, x - 16, 8, 1, PAGE_H - 24);
     sw_label(p, "SETUP", SW_F_LABEL, SW_ORANGE, x, 12, 0, false);
-    sw_label(p, "CLOCK", SW_F_SMALL, C_DIM, x, 56, 0, false);
-    P.clk_int = sw_btn(p, "INT", x + 110, 44, 100, 40, SW_CYAN, clock_cb, (void *)CLOCK_SRC_INT, NULL);
-    P.clk_midi = sw_btn(p, "MIDI", x + 216, 44, 100, 40, SW_CYAN, clock_cb, (void *)CLOCK_SRC_MIDI, NULL);
-    sw_label(p, "MIDI IN", SW_F_SMALL, C_DIM, x, 106, 0, false);
-    sw_btn_repeat(sw_btn(p, "-", x + 110, 94, 44, 40, ACC, ch_cb, (void *)0, SW_F_MID));
-    P.ch = sw_label(p, "", SW_F_LABEL, SW_TEXT, x + 154, 106, 118, true);
-    sw_btn_repeat(sw_btn(p, "+", x + 272, 94, 44, 40, ACC, ch_cb, (void *)1, SW_F_MID));
+    studio_io_panel(p, x, 44, &mod_drumster9, ACC);
+    const int my = 44 + 6 * 46 + 6;
+    sw_label(p, "NOTES IN", SW_F_SMALL, C_DIM, x, my + 12, 0, false);
+    sw_btn_repeat(sw_btn(p, "-", x + 120, my, 44, 40, ACC, ch_cb, (void *)0, SW_F_MID));
+    P.ch = sw_label(p, "", SW_F_LABEL, SW_TEXT, x + 164, my + 12, 118, true);
+    sw_btn_repeat(sw_btn(p, "+", x + 282, my, 44, 40, ACC, ch_cb, (void *)1, SW_F_MID));
     sw_label(p, "GM notes play the lanes: 36 K, 38 SN, 39 CL,\n42 CH, 46 OH, 49 CY, 45 TM", SW_F_SMALL, C_DIM,
-             x, 142, 0, false);
-
-    sw_label(p, "CV CLOCK", SW_F_LABEL, SW_ORANGE, x, 196, 0, false);
-    if (d9_cv_available()) {
-        P.cv_on = sw_btn(p, "OFF", x + 110, 188, 206, 40, SW_GREEN, cv_cb, NULL, NULL);
-        sw_label(p, "VOUT0", SW_F_SMALL, C_DIM, x, 250, 0, false);
-        static const char *const DN[3] = {"1/16", "1/8", "1/4"};
-        static const uint8_t DIV[3] = {2, 4, 8};
-        for (int i = 0; i < 3; i++)
-            P.cv_div[i] = sw_btn(p, DN[i], x + 110 + i * 70, 238, 66, 40, ACC, div_cb, (void *)(intptr_t)DIV[i], NULL);
-        sw_label(p, "VOUT1", SW_F_SMALL, C_DIM, x, 300, 0, false);
-        P.cv_v1[0] = sw_btn(p, "RESET", x + 110, 288, 100, 40, ACC, v1_cb, (void *)CV_RESET, NULL);
-        P.cv_v1[1] = sw_btn(p, "RUN", x + 216, 288, 100, 40, ACC, v1_cb, (void *)CV_RUN, NULL);
-        P.cv_status = sw_label(p, "", SW_F_SMALL, SW_TEXT, x, 340, 330, false);
-        sw_label(p, "Mabee DAC at 0x59: VOUT0 the clock, VOUT1 a\npulse each bar (RESET) or high while running",
-                 SW_F_SMALL, C_DIM, x, 362, 0, false);
-    } else {
-        sw_label(p, "In Studio the CV DACs belong to metroseq.\nDrumster9 on its own sends a clock.",
-                 SW_F_SMALL, C_DIM, x, 224, 0, false);
-    }
-    sw_label(p, "SAMPLES", SW_F_LABEL, SW_ORANGE, x, 420, 0, false);
-    P.samples = sw_label(p, "", SW_F_SMALL, C_DIM, x, 444, 330, false);
-    sw_label(p, "Gamma 9001, from AMY (MIT)", SW_F_SMALL, C_DIM, x, 464, 0, false);
+             x, my + 48, 0, false);
+    sw_label(p, "SAMPLES", SW_F_LABEL, SW_ORANGE, x, 436, 0, false);
+    P.samples = sw_label(p, "", SW_F_SMALL, C_DIM, x, 460, 330, false);
+    sw_label(p, "Gamma 9001, from AMY (MIT)", SW_F_SMALL, C_DIM, x, 480, 0, false);
     d9_set_page_refresh();
 }

@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "src/audio.c"
+        "src/io_panel.c"
         "src/midi_io.c"
         "src/midi_parse.c"
         "src/patch.c"

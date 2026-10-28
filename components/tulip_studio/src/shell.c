@@ -27,20 +27,16 @@ static bool s_leaving;
 
 static void build(int i);
 
-static void set_enabled(int i, bool on) {
-    if (g_enabled[i] == on) return;
-    rt_post(HC_ENABLE, (uint8_t)i, 0, on);
-    if (on)
-        g_cfg.open_mask |= (uint8_t)(1u << i);
-    else
-        g_cfg.open_mask &= (uint8_t)~(1u << i);
-    cfg_changed();
+// ON starts the app the first time (studio.c), and builds its screen: an
+// app's screen polls its MIDI / CCs even while hidden
+static void set_on(int i, bool on) {
+    studio_module_set_on(i, on);
+    if (on) build(i);
 }
 
 void shell_set_open(int i, bool on) {
     if (i < 0 || i >= g_nmods) return;
-    set_enabled(i, on);
-    if (on) build(i);   // its screen polls MIDI / CCs even while hidden
+    set_on(i, on);
 }
 
 static lv_obj_t *new_screen(void) {
@@ -69,7 +65,7 @@ static void show(int i) {
         home_refresh();
         lv_screen_load(s_home);
     } else {
-        if (!g_enabled[i]) set_enabled(i, true);
+        if (!studio_module_on(i)) set_on(i, true);
         build(i);
         lv_screen_load(s_scr[i]);
         if (g_mods[i]->ui_show) g_mods[i]->ui_show(true);
@@ -101,7 +97,7 @@ void studio_next_app(void) {
             }
             continue;
         }
-        if (g_enabled[k]) {
+        if (studio_module_on(k)) {
             show(k);
             return;
         }
@@ -116,7 +112,7 @@ static void leave_wait(lv_timer_t *t) {
     studio_clock_status(&st);
     bool busy = st.playing;
     for (int i = 0; i < g_nmods; i++)
-        if (g_mods[i]->busy && g_mods[i]->busy()) busy = true;
+        if (g_started[i] && g_mods[i]->busy && g_mods[i]->busy()) busy = true;
     if (!busy || ++ticks > 50) tulip_exit_to_launcher();
 }
 
@@ -160,24 +156,30 @@ lv_obj_t *studio_chrome(lv_obj_t *parent) {
 
 // --- the Studio home page ------------------------------------------------------------------
 
-// The app tiles in one row (4 across, or narrower for 5 or 6); each
-// carries the app's mixer strip and what it takes from MIDI IN.
+// The apps, 4 tiles to a page (the arrows page through more): each says
+// what it is and what it takes from MIDI IN, has its ON / OFF and SHOW, and
+// its mixer strip. Every app is OFF when the Studio starts.
 #define TILE_GAP 8
 #define TILES_Y 86
-static int s_cols, s_tile_w;
-#define TILE_COLS s_cols
-#define TILE_W s_tile_w
+#define TILE_COLS 4
+#define TILE_W ((1000 - (TILE_COLS - 1) * TILE_GAP) / TILE_COLS)
+#define TILE_H 250
+#define ROUTE_Y 350
+#define ROUTE_ROWS 4   // routing rows to a page
+#define MAX_ROWS (STUDIO_MAX_MODULES * 2)
 
 static struct {
     lv_obj_t *play, *bpm, *clk_int, *clk_midi, *clk_out, *mmc, *status;
-    lv_obj_t *tile[STUDIO_MAX_MODULES], *open_b[STUDIO_MAX_MODULES], *close_b[STUDIO_MAX_MODULES];
-    lv_obj_t *state[STUDIO_MAX_MODULES];
-    // routing rows
+    lv_obj_t *tile[STUDIO_MAX_MODULES], *on_b[STUDIO_MAX_MODULES], *show_b[STUDIO_MAX_MODULES];
+    lv_obj_t *state[STUDIO_MAX_MODULES], *cv;
+    lv_obj_t *app_prev, *app_next, *app_page, *route_prev, *route_next, *route_none;
+    int page, rpage;
+    // routing rows: every sequencer's tracks; shown while it's on
     int nrows;
     struct {
         int mod, track;
-        lv_obj_t *dest, *ch, *chm, *chp;
-    } row[8];
+        lv_obj_t *name, *arrow, *dest, *ch, *chm, *chp;
+    } row[MAX_ROWS];
     lv_obj_t *vol, *cpu, *midi_mon;
     lv_obj_t *midi_rows[STUDIO_MAX_MODULES];
     // mixer
@@ -275,20 +277,36 @@ static void h_mmc(void *ud) {
     home_refresh();
 }
 
-static void h_open(void *ud) { show((int)(intptr_t)ud); }
+static void h_show(void *ud) { show((int)(intptr_t)ud); }
 
-static void h_close(void *ud) {
+static void h_onoff(void *ud) {
     int i = (int)(intptr_t)ud;
-    set_enabled(i, false);
+    set_on(i, !studio_module_on(i));
     home_refresh();
 }
 
-// destinations a track can go to: preview (none), each synth module, MIDI OUT
+static void h_page(void *ud) {
+    int pages = (g_nmods + TILE_COLS - 1) / TILE_COLS;
+    H.page = (H.page + (int)(intptr_t)ud + pages) % pages;
+    home_refresh();
+}
+
+static void h_rpage(void *ud) {
+    H.rpage += (int)(intptr_t)ud;
+    home_refresh();
+}
+
+static void h_cv(void *ud) {
+    studio_set_cv_clock(!studio_cv_clock(), -1, -1);
+    home_refresh();
+}
+
+// destinations a track can go to: preview (none), each synth that's on, MIDI OUT
 static int dest_next(int cur) {
     int opts[STUDIO_MAX_MODULES + 2], n = 0;
     opts[n++] = ROUTE_NONE;
     for (int i = 0; i < g_nmods; i++)
-        if (g_mods[i]->flags & TMOD_F_NOTES_IN) opts[n++] = i;
+        if ((g_mods[i]->flags & TMOD_F_NOTES_IN) && studio_module_on(i)) opts[n++] = i;
     opts[n++] = ROUTE_MIDI_OUT;
     for (int k = 0; k < n; k++)
         if (opts[k] == cur) return opts[(k + 1) % n];
@@ -470,23 +488,22 @@ static void home_create(void) {
     studio_chrome(s);
     sw_line(s, 0, STUDIO_HDR_LINE_Y, 1024, 1);
 
-    // apps: a tile each - what it is, what it takes from MIDI IN, open /
-    // close, and its mixer strip
-    s_cols = g_nmods <= 4 ? 4 : g_nmods;
-    s_tile_w = (1000 - (s_cols - 1) * TILE_GAP) / s_cols;
-    bool compact = false, narrow = s_tile_w < 230;
-    int tile_h = compact ? 158 : 250;
+    // apps: a tile each, 4 to a page
     sw_label(s, "APPS", SW_F_LABEL, SW_ORANGE, 14, 64, 0, false);
-    sw_label(s, "LEVEL into the master VOLUME, M mutes. MIDI IN: notes + CCs by channel; clock + "
-                "transport to every clocked app when the clock is MIDI",
-             SW_F_SMALL, SW_DIM, 74, 66, 940, false);
+    sw_label(s, "switch on the apps you want; the others stay off. LEVEL into the master VOLUME, M mutes",
+             SW_F_SMALL, SW_DIM, 74, 66, 700, false);
+    if (g_nmods > TILE_COLS) {
+        H.app_prev = sw_btn(s, "<", 840, 58, 44, 26, SW_ORANGE, h_page, (void *)-1, NULL);
+        H.app_page = sw_label(s, "", SW_F_SMALL, SW_TEXT, 886, 64, 76, true);
+        H.app_next = sw_btn(s, ">", 966, 58, 44, 26, SW_ORANGE, h_page, (void *)1, NULL);
+    }
     for (int i = 0; i < g_nmods; i++) {
         const tmod_t *m = g_mods[i];
-        int x = 12 + (i % TILE_COLS) * (TILE_W + TILE_GAP), y = TILES_Y + (i / TILE_COLS) * (tile_h + 8);
-        lv_obj_t *t = H.tile[i] = sw_box(s, x, y, TILE_W, tile_h, SW_BG, 4);
+        int x = 12 + (i % TILE_COLS) * (TILE_W + TILE_GAP);
+        lv_obj_t *t = H.tile[i] = sw_box(s, x, TILES_Y, TILE_W, TILE_H, SW_BG, 4);
         lv_obj_set_style_border_width(t, 1, 0);
         lv_obj_set_style_border_color(t, sw_c(SW_LINE), 0);
-        sw_label(t, m->title, narrow ? SW_F_LABEL : SW_F_MID, SW_TEXT, 10, narrow ? 12 : 8, 0, false);
+        sw_label(t, m->title, SW_F_MID, SW_TEXT, 10, 8, 0, false);
         char tag[48];
         snprintf(tag, sizeof tag, "%s%s%s", studio_role_name(m->role),
                  (m->flags & TMOD_F_CV) ? "  CV" : "", (m->flags & TMOD_F_AUDIO) ? "  AUDIO" : "");
@@ -495,57 +512,46 @@ static void home_create(void) {
         sw_label(t, tag, SW_F_SMALL, tc, 10, 36, 0, false);
         H.state[i] = sw_label(t, "", SW_F_SMALL, SW_DIM, TILE_W - 90, 12, 78, false);
         lv_obj_set_style_text_align(H.state[i], LV_TEXT_ALIGN_RIGHT, 0);
-        int yb = 56;
-        if (!compact) {
-            lv_obj_t *bl = sw_label(t, m->blurb ? m->blurb : "", SW_F_SMALL, SW_DIM, 10, 56,
-                                    TILE_W - 20, false);
-            lv_label_set_long_mode(bl, LV_LABEL_LONG_WRAP);
-            lv_obj_set_height(bl, 30);
-            sw_label(t, "MIDI IN", SW_F_SMALL, SW_ORANGE, 10, 92, 0, false);
-            H.midi_rows[i] = sw_label(t, "", SW_F_SMALL, SW_TEXT, 10, 108, TILE_W - 20, false);
-            lv_label_set_long_mode(H.midi_rows[i], LV_LABEL_LONG_WRAP);
-            lv_obj_set_height(H.midi_rows[i], 46);
-            yb = 156;
-        }
-        int bw = narrow ? (TILE_W - 30) / 2 : 120, cw = narrow ? bw : 90;
-        H.open_b[i] = sw_btn(t, "OPEN", 10, yb, bw, 36, SW_ORANGE, h_open, (void *)(intptr_t)i, NULL);
-        H.close_b[i] = sw_btn(t, "CLOSE", TILE_W - 10 - cw, yb, cw, 36, SW_RED, h_close,
-                              (void *)(intptr_t)i, NULL);
-        if (m->flags & TMOD_F_AUDIO) mixer_strip(t, i, yb + 40);
+        lv_obj_t *bl = sw_label(t, m->blurb ? m->blurb : "", SW_F_SMALL, SW_DIM, 10, 56, TILE_W - 20, false);
+        lv_label_set_long_mode(bl, LV_LABEL_LONG_WRAP);
+        lv_obj_set_height(bl, 30);
+        sw_label(t, "MIDI IN", SW_F_SMALL, SW_ORANGE, 10, 92, 0, false);
+        H.midi_rows[i] = sw_label(t, "", SW_F_SMALL, SW_TEXT, 10, 108, TILE_W - 20, false);
+        lv_label_set_long_mode(H.midi_rows[i], LV_LABEL_LONG_WRAP);
+        lv_obj_set_height(H.midi_rows[i], 46);
+        H.on_b[i] = sw_btn(t, "OFF", 10, 156, 110, 36, SW_GREEN, h_onoff, (void *)(intptr_t)i, NULL);
+        H.show_b[i] = sw_btn(t, "SHOW", TILE_W - 110, 156, 100, 36, SW_ORANGE, h_show, (void *)(intptr_t)i, NULL);
+        if (m->flags & TMOD_F_AUDIO) mixer_strip(t, i, 196);
     }
 
-    // routing
-    int y = TILES_Y + ((g_nmods + TILE_COLS - 1) / TILE_COLS) * (tile_h + 8) + 6;
-    sw_label(s, "ROUTING", SW_F_LABEL, SW_ORANGE, 14, y, 0, false);
+    // routing: every sequencer's tracks (while it's on), 4 to a page
+    sw_label(s, "ROUTING", SW_F_LABEL, SW_ORANGE, 14, ROUTE_Y, 0, false);
     sw_label(s, "a sequencer track plays its own sound, a synth on the Tulip, or MIDI OUT",
-             SW_F_SMALL, SW_DIM, 110, y + 2, 0, false);
-    y += 24;
+             SW_F_SMALL, SW_DIM, 110, ROUTE_Y + 2, 0, false);
+    H.route_none = sw_label(s, "switch a sequencer on to route its tracks", SW_F_SMALL, SW_DIM, 14,
+                            ROUTE_Y + 36, 0, false);
+    H.route_prev = sw_btn(s, "<", 840, ROUTE_Y - 6, 44, 26, SW_CYAN, h_rpage, (void *)-1, NULL);
+    H.route_next = sw_btn(s, ">", 966, ROUTE_Y - 6, 44, 26, SW_CYAN, h_rpage, (void *)1, NULL);
     H.nrows = 0;
-    for (int i = 0; i < g_nmods && H.nrows < 8; i++) {
+    for (int i = 0; i < g_nmods; i++) {
         const tmod_t *m = g_mods[i];
-        for (int k = 0; k < m->n_note_outs && H.nrows < 8; k++) {
+        for (int k = 0; k < m->n_note_outs && k < 2 && H.nrows < MAX_ROWS; k++) {
             int r = H.nrows++;
-            int x = 14 + (r % 2) * 504, yy = y + (r / 2) * 46;
             H.row[r].mod = i;
             H.row[r].track = k;
             char t[40];
-            snprintf(t, sizeof t, "%s %s", m->title,
-                     m->note_out_names ? m->note_out_names[k] : "OUT");
-            sw_label(s, t, SW_F_LABEL, SW_TEXT, x, yy + 11, 170, false);
-            sw_label(s, LV_SYMBOL_RIGHT, SW_F_LABEL, SW_DIM, x + 170, yy + 11, 0, false);
-            H.row[r].dest = sw_btn(s, "", x + 194, yy, 140, 38, SW_CYAN, h_dest,
-                                   (void *)(intptr_t)r, NULL);
-            H.row[r].chm = sw_btn(s, "-", x + 342, yy, 38, 38, SW_CYAN, h_ch,
-                                  (void *)(intptr_t)(r << 1), NULL);
-            H.row[r].ch = sw_label(s, "", SW_F_LABEL, SW_TEXT, x + 382, yy + 11, 70, true);
-            H.row[r].chp = sw_btn(s, "+", x + 454, yy, 38, 38, SW_CYAN, h_ch,
-                                  (void *)(intptr_t)((r << 1) | 1), NULL);
+            snprintf(t, sizeof t, "%s %s", m->title, m->note_out_names ? m->note_out_names[k] : "OUT");
+            H.row[r].name = sw_label(s, t, SW_F_LABEL, SW_TEXT, 0, 0, 170, false);
+            H.row[r].arrow = sw_label(s, LV_SYMBOL_RIGHT, SW_F_LABEL, SW_DIM, 0, 0, 0, false);
+            H.row[r].dest = sw_btn(s, "", 0, 0, 140, 38, SW_CYAN, h_dest, (void *)(intptr_t)r, NULL);
+            H.row[r].chm = sw_btn(s, "-", 0, 0, 38, 38, SW_CYAN, h_ch, (void *)(intptr_t)(r << 1), NULL);
+            H.row[r].ch = sw_label(s, "", SW_F_LABEL, SW_TEXT, 0, 0, 70, true);
+            H.row[r].chp = sw_btn(s, "+", 0, 0, 38, 38, SW_CYAN, h_ch, (void *)(intptr_t)((r << 1) | 1), NULL);
         }
     }
 
     // Studio patches, under the routing
-    y += ((H.nrows + 1) / 2) * 46 + 4;
-    patch_row(s, y < 540 - 70 ? y : 540 - 70);
+    patch_row(s, 470);
 
     // bottom line: volume, load, MIDI monitor, touch calibration
     sw_line(s, 0, 540, 1024, 1);
@@ -555,7 +561,8 @@ static void home_create(void) {
     sw_btn(s, "+", 158, 550, 38, 38, SW_ORANGE, h_vol, (void *)1, NULL);
     H.cpu = sw_label(s, "", SW_F_SMALL, SW_DIM, 214, 562, 170, false);
     sw_label(s, "MIDI IN", SW_F_SMALL, SW_DIM, 400, 562, 0, false);
-    H.midi_mon = sw_label(s, "--", SW_F_SMALL, SW_TEXT, 460, 562, 300, false);
+    H.midi_mon = sw_label(s, "--", SW_F_SMALL, SW_TEXT, 460, 562, 270, false);
+    H.cv = sw_btn(s, "CV CLOCK", 744, 550, 128, 38, SW_GREEN, h_cv, NULL, NULL);
     sw_btn(s, "TOUCH CAL", 880, 550, 130, 38, SW_ORANGE, h_cal, NULL, NULL);
     home_refresh();
 }
@@ -568,18 +575,59 @@ static void home_refresh(void) {
     sw_btn_set(H.clk_out, studio_clock_out() && src == CLOCK_SRC_INT);
     sw_btn_set(H.mmc, studio_mmc());
     sw_btn_text(H.mmc, src == CLOCK_SRC_MIDI ? "MMC IN" : "MMC OUT");
+    int pages = (g_nmods + TILE_COLS - 1) / TILE_COLS;
+    if (H.page >= pages) H.page = 0;
     for (int i = 0; i < g_nmods; i++) {
-        bool on = g_enabled[i];
-        lv_label_set_text(H.state[i], on ? "RUNNING" : "CLOSED");
+        bool on = studio_module_on(i), here = i / TILE_COLS == H.page;
+        if (here)
+            lv_obj_remove_flag(H.tile[i], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(H.tile[i], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(H.state[i], on ? "ON" : "OFF");
         lv_obj_set_style_text_color(H.state[i], sw_c(on ? SW_GREEN : SW_DIM), 0);
         lv_obj_set_style_border_color(H.tile[i], sw_c(on ? SW_EDGE : SW_LINE), 0);
-        sw_btn_text(H.open_b[i], on ? "SHOW" : "OPEN");
+        sw_btn_text(H.on_b[i], on ? "ON" : "OFF");
+        sw_btn_set(H.on_b[i], on);
         if (on)
-            lv_obj_remove_flag(H.close_b[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(H.show_b[i], LV_OBJ_FLAG_HIDDEN);
         else
-            lv_obj_add_flag(H.close_b[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(H.show_b[i], LV_OBJ_FLAG_HIDDEN);
     }
-    for (int r = 0; r < H.nrows; r++) {
+    if (H.app_page) lv_label_set_text_fmt(H.app_page, "%d / %d", H.page + 1, pages);
+    // routing: the rows of the sequencers that are on, a page of 4
+    int vis = 0;
+    for (int r = 0; r < H.nrows; r++) vis += studio_module_on(H.row[r].mod);
+    int rpages = (vis + ROUTE_ROWS - 1) / ROUTE_ROWS;
+    if (H.rpage >= rpages) H.rpage = rpages ? rpages - 1 : 0;
+    if (H.rpage < 0) H.rpage = 0;
+    lv_obj_t *nav[2] = {H.route_prev, H.route_next};
+    for (int j = 0; j < 2; j++) {
+        if (rpages > 1)
+            lv_obj_remove_flag(nav[j], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(nav[j], LV_OBJ_FLAG_HIDDEN);
+    }
+    if (vis)
+        lv_obj_add_flag(H.route_none, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_remove_flag(H.route_none, LV_OBJ_FLAG_HIDDEN);
+    for (int r = 0, v = 0; r < H.nrows; r++) {
+        bool here = studio_module_on(H.row[r].mod) && v / ROUTE_ROWS == H.rpage;
+        if (studio_module_on(H.row[r].mod)) v++;
+        lv_obj_t *objs[6] = {H.row[r].name, H.row[r].arrow, H.row[r].dest, H.row[r].chm, H.row[r].ch, H.row[r].chp};
+        if (!here) {
+            for (int j = 0; j < 6; j++) lv_obj_add_flag(objs[j], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        int slot = (v - 1) % ROUTE_ROWS;
+        int x = 14 + (slot % 2) * 504, yy = ROUTE_Y + 24 + (slot / 2) * 46;
+        lv_obj_set_pos(H.row[r].name, x, yy + 11);
+        lv_obj_set_pos(H.row[r].arrow, x + 170, yy + 11);
+        lv_obj_set_pos(H.row[r].dest, x + 194, yy);
+        lv_obj_set_pos(H.row[r].chm, x + 342, yy);
+        lv_obj_set_pos(H.row[r].ch, x + 382, yy + 11);
+        lv_obj_set_pos(H.row[r].chp, x + 454, yy);
+        for (int j = 0; j < 3; j++) lv_obj_remove_flag(objs[j], LV_OBJ_FLAG_HIDDEN);
         int m = H.row[r].mod, k = H.row[r].track;
         int d = studio_route_get(m, k);
         char t[24];
@@ -589,14 +637,16 @@ static void home_refresh(void) {
         bool midi = d == ROUTE_MIDI_OUT;
         snprintf(t, sizeof t, "CH %d", studio_route_midi_ch(m, k));
         lv_label_set_text(H.row[r].ch, t);
-        lv_obj_t *objs[3] = {H.row[r].ch, H.row[r].chm, H.row[r].chp};
-        for (int j = 0; j < 3; j++) {
+        for (int j = 3; j < 6; j++) {
             if (midi)
                 lv_obj_remove_flag(objs[j], LV_OBJ_FLAG_HIDDEN);
             else
                 lv_obj_add_flag(objs[j], LV_OBJ_FLAG_HIDDEN);
         }
     }
+    bool cv = studio_cv_clock();
+    sw_btn_set(H.cv, cv);
+    sw_btn_text(H.cv, cv ? "CV CLOCK ON" : "CV CLOCK OFF");
     char v[8];
     snprintf(v, sizeof v, "%d", studio_volume());
     lv_label_set_text(H.vol, v);
@@ -677,7 +727,7 @@ void shell_ui_create(void) {
     // every running app gets its screen now (its MIDI CC / program change
     // handling runs in its UI poll, shown or not); closed ones when opened
     for (int i = 0; i < g_nmods; i++)
-        if (g_enabled[i]) build(i);
+        if (studio_module_on(i)) build(i);
     // Studio always opens on its home page; a single app on its own screen
     show(studio_multi() ? -1 : 0);
     if (boot != lv_screen_active()) lv_obj_delete(boot);

@@ -5,6 +5,7 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
+#include "nvs.h"
 
 static const char *TAG = "tulip";
 
@@ -31,6 +32,23 @@ void tulip_app_init(void) {
     esp_ota_mark_app_valid_cancel_rollback();
     boot_launcher_next();
     ESP_LOGI(TAG, "running under the launcher; next boot returns to it");
+}
+
+void tulip_boot_mode_set(const char *mode) {
+    nvs_handle_t h;
+    if (nvs_open("tulip", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_str(h, "mode", mode ? mode : "");
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void tulip_boot_mode_get(char *out, int len) {
+    out[0] = 0;
+    nvs_handle_t h;
+    if (nvs_open("tulip", NVS_READONLY, &h) != ESP_OK) return;
+    size_t n = (size_t)len;
+    if (nvs_get_str(h, "mode", out, &n) != ESP_OK) out[0] = 0;
+    nvs_close(h);
 }
 
 void tulip_exit_to_launcher(void) {

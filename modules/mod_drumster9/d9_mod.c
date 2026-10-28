@@ -1,5 +1,6 @@
 // d9_mod.c - Drumster9 as a Studio module: the samples, the audio on the
-// master clock, MIDI notes in, the CV clock (on its own), files.
+// master clock, MIDI notes in, files. (The CV clock is the runtime's: every
+// drum machine gets it, see docs/APPS.md.)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,7 @@ d9_state_t g_d9;
 d9_index_t *g_d9ix_p;   // allocated at init, before anything reads it
 volatile int8_t g_d9_next = -1;
 d9_status_t g_d9s = {.step = -1};
-d9_settings_t g_d9set = {.midi_ch = 11, .cv_on = true, .cv_div = 2, .cv_vout1 = CV_RESET};
+d9_settings_t g_d9set = {.midi_ch = 11};
 volatile uint32_t g_d9_reload;
 char g_d9_proj_cur[D9_PROJECT_NAME + 1];
 
@@ -165,7 +166,6 @@ typedef struct {
 static QueueHandle_t s_trigq;
 static d9_engine_t s_eng;
 static d9_seq_t s_seq;
-static uint32_t s_epoch_seen;
 static bool s_was_running;
 static volatile bool s_reseq;   // closed in Studio: pick up where the clock is when reopened
 
@@ -284,151 +284,6 @@ static void midi_desc(char *b, int n) {
     snprintf(b, n, "%s: GM drum notes play the lanes (36 kick, 38 snare, 42 hat ...)", ch);
 }
 
-// --- the CV clock (rt task) -------------------------------------------------------------
-//
-// As the Python did it, on the Mabee DAC at 0x59: VOUT0 a square-wave clock
-// locked to the step grid (both edges on 1/32 steps), VOUT1 a one-step reset
-// pulse on each downbeat (or high while running). Only when no other app in
-// the image drives the DACs (in Studio, metroseq owns them).
-
-#define CV_ADDR 0x59
-#define CV_HZ 400000
-#define CV_HIGH 0x8000   // 5 V of the 0-10 V range
-enum { CV_CMD_APPLY = 1 };
-
-static bool s_cv_avail;
-static i2c_master_dev_handle_t s_cv_dev;
-static int8_t s_cv_lvl[2] = {-1, -1};
-static uint8_t s_cv_fails;
-static int s_ramp = -1;
-static int64_t s_ramp_next = INT64_MAX, s_cv_init_at = INT64_MAX;
-
-bool d9_cv_available(void) { return s_cv_avail; }
-
-static bool cv_write(int ch, uint16_t code) {
-    if (!s_cv_dev) return false;
-    uint8_t b[3] = {(uint8_t)(ch ? 0x04 : 0x02), (uint8_t)(code & 0xff), (uint8_t)(code >> 8)};
-    if (i2c_master_transmit(s_cv_dev, b, 3, 5) == ESP_OK) {
-        s_cv_fails = 0;
-        return true;
-    }
-    if (++s_cv_fails >= 5) {
-        ESP_LOGW(TAG, "CV DAC stopped answering: clock off");
-        g_d9s.cv_present = false;
-    }
-    return false;
-}
-
-static void cv_level(int ch, bool high) {
-    if (!g_d9s.cv_present || s_cv_lvl[ch] == high) return;
-    if (cv_write(ch, high ? CV_HIGH : 0)) s_cv_lvl[ch] = high;
-}
-
-static void cv_bringup(void) {
-    if (!s_cv_dev) {
-        i2c_device_config_t cfg = {.dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = CV_ADDR,
-                                   .scl_speed_hz = CV_HZ};
-        if (i2c_master_bus_add_device(studio_i2c_bus(), &cfg, &s_cv_dev) != ESP_OK) return;
-    }
-    uint8_t range[2] = {0x01, 0x11};   // 0-10 V
-    i2c_master_transmit(s_cv_dev, range, 2, 5);
-    g_d9s.cv_present = cv_write(0, 0) && cv_write(1, 0);
-    s_cv_lvl[0] = s_cv_lvl[1] = 0;
-    if (g_d9s.cv_present) {
-        s_ramp = 0;   // ease VOUT0 up and down once before any clock
-        s_ramp_next = studio_now_us();
-        ESP_LOGI(TAG, "CV clock on the DAC at 0x%02x", CV_ADDR);
-    }
-}
-
-static void m_rt_init(void) {
-    if (s_cv_avail) s_cv_init_at = studio_now_us() + 1000000;
-}
-
-// the next step boundary after now, while the transport runs
-static int64_t cv_next_edge(int64_t now) {
-    tclock_tl_t tl;
-    studio_timeline(&tl);
-    if (!tl.running || !g_d9s.cv_present || s_ramp >= 0 || !g_d9set.cv_on) return INT64_MAX;
-    int64_t pos = tclock_tl_pos(&tl, now);
-    int64_t nxt = (pos < 0 ? 0 : (pos / D9_STEP_UNITS + 1)) * D9_STEP_UNITS;
-    return tclock_tl_time(&tl, nxt);
-}
-
-static int64_t m_next_due(void) {
-    int64_t due = cv_next_edge(studio_now_us());
-    if (s_ramp_next < due) due = s_ramp_next;
-    if (s_cv_init_at < due) due = s_cv_init_at;
-    return due;
-}
-
-static void m_advance(int64_t now) {
-    if (now >= s_cv_init_at) {
-        s_cv_init_at = INT64_MAX;
-        if (g_d9set.cv_on) cv_bringup();
-    }
-    if (s_ramp >= 0 && now >= s_ramp_next) {
-        if (s_ramp > 32) {
-            cv_write(0, 0);
-            s_cv_lvl[0] = 0;
-            s_ramp = -1;
-            s_ramp_next = INT64_MAX;
-        } else {
-            int i = s_ramp <= 16 ? s_ramp : 32 - s_ramp;
-            cv_write(0, (uint16_t)(CV_HIGH * i / 16));
-            s_cv_lvl[0] = -1;
-            s_ramp++;
-            s_ramp_next += 40000;
-        }
-        return;
-    }
-    tclock_tl_t tl;
-    studio_timeline(&tl);
-    if (!g_d9s.cv_present || !g_d9set.cv_on) return;
-    if (!tl.running) {
-        cv_level(0, false);
-        cv_level(1, false);
-        return;
-    }
-    int64_t pos = tclock_tl_pos(&tl, now + TC_LOOKAHEAD_US);
-    if (pos < 0) return;
-    int step = (int)((pos / D9_STEP_UNITS) % D9_STEPS);
-    int div = g_d9set.cv_div >= 2 ? g_d9set.cv_div : 2;
-    cv_level(0, (step % div) < div / 2);
-    cv_level(1, g_d9set.cv_vout1 == CV_RUN ? true : step == 0);
-}
-
-static void m_poll(int64_t now) {
-    (void)now;
-    // stopped: everything low, at once
-    tclock_tl_t tl;
-    studio_timeline(&tl);
-    if (tl.epoch != s_epoch_seen) {
-        s_epoch_seen = tl.epoch;
-        if (!tl.running && g_d9s.cv_present) {
-            cv_level(0, false);
-            cv_level(1, false);
-        }
-    }
-}
-
-static void m_cmd(uint8_t cmd, int32_t arg, int64_t now) {
-    (void)arg;
-    (void)now;
-    if (cmd != CV_CMD_APPLY || !s_cv_avail) return;
-    if (g_d9set.cv_on && !g_d9s.cv_present) {
-        cv_bringup();
-    } else if (!g_d9set.cv_on && g_d9s.cv_present) {
-        cv_level(0, false);
-        cv_level(1, false);
-    }
-}
-
-void d9_cv_apply(void) {
-    studio_cmd(&mod_drumster9, CV_CMD_APPLY, 0);
-    d9_settings_save();
-}
-
 // --- files ---------------------------------------------------------------------------------
 
 static bool d9_dir(char *out, int len, const char *name) {
@@ -484,21 +339,12 @@ static void settings_load(void) {
     const cJSON *v;
     if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "midi_ch")) && v->valueint >= -1 && v->valueint <= 16)
         g_d9set.midi_ch = (int8_t)v->valueint;
-    if (cJSON_IsBool(v = cJSON_GetObjectItem(o, "cv"))) g_d9set.cv_on = cJSON_IsTrue(v);
-    if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "cv_div")) &&
-        (v->valueint == 2 || v->valueint == 4 || v->valueint == 8))
-        g_d9set.cv_div = (uint8_t)v->valueint;
-    if (cJSON_IsString(v = cJSON_GetObjectItem(o, "cv_vout1")))
-        g_d9set.cv_vout1 = strcmp(v->valuestring, "run") ? CV_RESET : CV_RUN;
     cJSON_Delete(o);
 }
 
 void d9_settings_save(void) {
     cJSON *o = cJSON_CreateObject();
     cJSON_AddNumberToObject(o, "midi_ch", g_d9set.midi_ch);
-    cJSON_AddBoolToObject(o, "cv", g_d9set.cv_on);
-    cJSON_AddNumberToObject(o, "cv_div", g_d9set.cv_div);
-    cJSON_AddStringToObject(o, "cv_vout1", g_d9set.cv_vout1 == CV_RUN ? "run" : "reset");
     write_json("settings.json", o);
     cJSON_Delete(o);
 }
@@ -647,18 +493,11 @@ static void init(void) {
     s_cache = heap_caps_calloc(D9_MAX_SAMPLES, sizeof *s_cache, MALLOC_CAP_SPIRAM);
     if (!d9_engine_init(&s_eng, psram_alloc)) ESP_LOGW(TAG, "no room for echo / reverb");
     d9_seq_init(&s_seq);
-    // only on our own: in Studio, metroseq owns the DACs
-    s_cv_avail = true;
-    for (int i = 0; i < studio_module_count(); i++) {
-        const tmod_t *m = studio_module(i);
-        if (m != &mod_drumster9 && (m->flags & TMOD_F_CV)) s_cv_avail = false;
-    }
     settings_load();
     state_load();
     g_d9s.samples_ok = samples_open();
     if (g_d9s.samples_ok) d9_ensure_lane_samples();
-    ESP_LOGI(TAG, "%u KB of samples in RAM, CV clock %s", (unsigned)(s_cache_bytes / 1024),
-             s_cv_avail ? "available" : "off (another app has the DACs)");
+    ESP_LOGI(TAG, "%u KB of samples in RAM", (unsigned)(s_cache_bytes / 1024));
 }
 
 static void ui_poll(bool visible) {
@@ -678,11 +517,6 @@ tmod_t mod_drumster9 = {
     .role = TMOD_DRUMS,
     .flags = TMOD_F_AUDIO | TMOD_F_CLOCKED,
     .init = init,
-    .rt_init = m_rt_init,
-    .rt_next_due = m_next_due,
-    .rt_advance = m_advance,
-    .rt_cmd = m_cmd,
-    .rt_poll = m_poll,
     .rt_enable = enable,
     .render = render,
     .midi = midi_in,

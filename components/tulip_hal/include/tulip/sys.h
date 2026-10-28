@@ -14,6 +14,12 @@
 // Apps: call at the top of app_main(). Harmless when run standalone.
 void tulip_app_init(void);
 
+// The Tulip Studio image runs either one app on its own or the Studio:
+// the launcher leaves the choice here before it boots the image. "" (or
+// "studio") = the Studio; else an app's name ("drumster9"). NVS must be up.
+void tulip_boot_mode_set(const char *mode);
+void tulip_boot_mode_get(char *out, int len);
+
 // Apps: leave and go back to the launcher. Never returns.
 void tulip_exit_to_launcher(void);
 

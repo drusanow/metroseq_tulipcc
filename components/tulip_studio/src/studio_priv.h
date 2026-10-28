@@ -15,10 +15,14 @@ typedef struct {
     uint8_t clock_out;
     uint8_t mmc;
     uint8_t volume;
-    uint8_t open_mask;          // modules open in Studio
+    uint16_t open_mask;         // unused: Studio starts with every app off
     int8_t shown;               // last module on screen (-1 = home)
     int8_t route[STUDIO_MAX_MODULES][STUDIO_MAX_OUTS];
     uint8_t route_ch[STUDIO_MAX_MODULES][STUDIO_MAX_OUTS];
+    // the CV clock (drum machines, when no sequencer has the DACs)
+    uint8_t cv_clock;           // on / off
+    uint8_t cv_div;             // a pulse every 2 (1/16), 4 (1/8) or 8 (1/4) 1/32 steps
+    uint8_t cv_vout1;           // CV_V1_RESET / CV_V1_RUN
 } studio_cfg_t;
 
 extern studio_cfg_t g_cfg;
@@ -32,6 +36,10 @@ extern studio_mix_t g_mix;
 extern const tmod_t *g_mods[STUDIO_MAX_MODULES];
 extern int g_nmods;
 extern volatile bool g_enabled[STUDIO_MAX_MODULES];
+// started: init() has run (UI task). The rt task keeps its own flag for
+// rt_init(); no hook of an app runs before both.
+extern volatile bool g_started[STUDIO_MAX_MODULES];
+extern char g_single[24];   // "" = the Studio, else the app running on its own
 
 void cfg_load(void);
 void cfg_changed(void);      // save soon (UI task does the flash write)
@@ -49,6 +57,8 @@ enum {
     HC_MMC,
     HC_ENABLE,       // arg = module << 8 | on
     HC_MODULE,       // module command
+    HC_START,        // arg = module: rt_init() it, give it the tempo, mark it started
+    HC_CV,           // the CV clock settings changed
 };
 void rt_start(void);
 bool rt_post(uint8_t kind, uint8_t mod, uint8_t cmd, int32_t arg);

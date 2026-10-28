@@ -1,5 +1,6 @@
 // gx_midip.c - the MIDI page (MidiPage in gintonix.py): note / CC channel,
-// the note map, the clock (shared by every Studio app), pattern MIDI out,
+// the note map, the clock (shared by every Studio app), the CV clock,
+// pattern MIDI out,
 // CC learn, sync trim.
 #include <stdio.h>
 #include <string.h>
@@ -149,9 +150,10 @@ void midi_page_create(lv_obj_t *g) {
     I.out_pick = pick_new(g, 110, 146, 100, 32, ACC, "PATTERN MIDI OUT", out_cb);
     pick_set_options(I.out_pick, outs, 17);
     sw_label(g,
-             "the pattern's hits go out as MIDI notes C1-G1 (36-43) on the clock grid, accent = "
-             "velocity 127, normal 64",
-             F_LABEL, C_DIM, 222, 154, 790, false);
+             "hits go out as notes C1-G1 (36-43),\naccent velocity 127, normal 64",
+             F_LABEL, C_DIM, 222, 146, 360, false);
+    // the runtime's CV clock: VOUT0 the clock, VOUT1 reset / run (Mabee DAC 0x59)
+    studio_cv_strip(g, 590, 146, 32, ACC);
 
     sw_label(g, "MIDI CC", F_LABEL, C_TEXT, 12, 208, 0, false);
     I.b_learn = sw_btn(g, "CC LEARN", 110, 198, 100, 32, LEARN_C, toggle_learn, NULL, NULL);

@@ -23,7 +23,7 @@
 static struct {
     lv_obj_t *panel;
     lv_obj_t *root_lbl, *scale_lbl, *boct_lbl, *range_lbl, *notes_lbl;
-    ui_btn_t *cv_btn, *merge_btn, *clock_btn, *audio_btn;
+    ui_btn_t *cv_btn, *merge_btn, *clock_btn, *clkout_btn, *audio_btn;
     lv_obj_t *cv_status;
     lv_obj_t *info, *proj_lbl;
     lv_obj_t *timing_lbl;
@@ -111,6 +111,12 @@ static void toggle_merge(intptr_t a) {
 static void toggle_clock(intptr_t a) {
     // the Studio master clock: every app follows it
     studio_set_clock_src(studio_clock_src() == CLOCK_SRC_MIDI ? CLOCK_SRC_INT : CLOCK_SRC_MIDI);
+    set_page_refresh();
+}
+
+static void toggle_clock_out(intptr_t a) {
+    // MIDI clock out follows the master: none while it follows MIDI in
+    if (studio_clock_src() == CLOCK_SRC_INT) studio_set_clock_out(!studio_clock_out());
     set_page_refresh();
 }
 
@@ -212,6 +218,9 @@ void set_page_refresh(void) {
     bool midi = studio_clock_src() == CLOCK_SRC_MIDI;
     ui_btn_set_text(S.clock_btn, midi ? "MIDI" : "INTERNAL");
     ui_btn_set_color(S.clock_btn, midi ? C_PLAY : C_BTN_DK);
+    bool out = studio_clock_out() && !midi;
+    ui_btn_set_text(S.clkout_btn, midi ? "(MIDI IN)" : out ? "ON" : "OFF");
+    ui_btn_set_color(S.clkout_btn, out ? C_PLAY : C_BTN_DK);
     ui_btn_set_text(S.audio_btn, preview_enabled() ? "ON" : "OFF");
     ui_btn_set_color(S.audio_btn, preview_enabled() ? C_PLAY : C_BTN_DK);
     refresh_projects();
@@ -256,10 +265,10 @@ void set_page_create(lv_obj_t *parent) {
     // column 3: the rest of the setup
     ui_section(p, "SETUP", COL_X(2), 12);
     S.clock_btn = button(p, 2, 0, "Clock", "INTERNAL", toggle_clock);
-    S.audio_btn = button(p, 2, 1, "Preview", "ON", toggle_audio);
-    button(p, 2, 2, "Touch", "CALIBRATE", touch_cal);
-    hint(p, "Clock is the Studio's: every\napp follows it. MIDI OUT per\ntrack is on the TRK page.",
-         COL_X(2), ROW_Y(3) + 4);
+    S.clkout_btn = button(p, 2, 1, "MIDI clk out", "OFF", toggle_clock_out);
+    S.audio_btn = button(p, 2, 2, "Preview", "ON", toggle_audio);
+    button(p, 2, 3, "Touch", "CALIBRATE", touch_cal);
+    hint(p, "One clock for every app. MIDI OUT\nper track is on the TRK page.", COL_X(2), ROW_Y(4) + 4);
 
     ui_panel(p, COL_X(0), 316, 1024 - 2 * COL_X(0), 1, C_PANEL2, 0);
 

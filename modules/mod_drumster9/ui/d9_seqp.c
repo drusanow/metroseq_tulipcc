@@ -93,8 +93,10 @@ static void paint_labels(void) {
     lv_label_set_text(S.kit_lbl, D9_KIT[g_d9.kit].name);
     lv_label_set_text(S.proj_lbl, g_d9_proj_cur[0] ? g_d9_proj_cur : "");
     if (S.cv) {
-        sw_btn_set(S.cv, g_d9set.cv_on && g_d9s.cv_present);
-        sw_btn_text(S.cv, g_d9set.cv_on ? (g_d9s.cv_present ? "CV ON" : "CV: NO DAC") : "CV OFF");
+        int st = studio_cv_clock_state();
+        sw_btn_set(S.cv, st == CVCLK_ON);
+        sw_btn_text(S.cv, st == CVCLK_ON ? "CV CLOCK ON" : st == CVCLK_NO_DAC ? "CV: NO DAC"
+                          : st == CVCLK_SEQUENCER ? "CV: SEQ HAS IT" : "CV CLOCK OFF");
     }
 }
 
@@ -232,8 +234,7 @@ static void paste_cb(void *ud) {
 }
 
 static void cv_cb(void *ud) {
-    g_d9set.cv_on = !g_d9set.cv_on;
-    d9_cv_apply();
+    studio_set_cv_clock(!studio_cv_clock(), -1, -1);
     paint_labels();
 }
 
@@ -338,7 +339,7 @@ void d9_seq_page_create(lv_obj_t *p) {
     }
     S.copy = sw_btn(p, "COPY", 628, BANK_Y, 90, 44, ACC, copy_cb, NULL, NULL);
     S.paste = sw_btn(p, "PASTE", 724, BANK_Y, 90, 44, ACC, paste_cb, NULL, NULL);
-    if (d9_cv_available()) S.cv = sw_btn(p, "CV", 832, BANK_Y, 180, 44, SW_GREEN, cv_cb, NULL, NULL);
+    S.cv = sw_btn(p, "CV", 832, BANK_Y, 180, 44, SW_GREEN, cv_cb, NULL, NULL);
     sw_label(p, "tap a step to set it  -  the lane name plays it  -  M mute  S solo  R random  -  "
                 "kit: the lane's own  -  A-J: patterns, the next one on the next bar",
              SW_F_SMALL, C_DIM, 8, BANK_Y + 58, 1000, false);

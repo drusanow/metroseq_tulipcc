@@ -35,16 +35,11 @@ typedef struct {
     volatile float peak;              // output peak since the UI last took it
     volatile int load_pct;
     volatile bool samples_ok;         // the samples partition was found
-    volatile bool cv_present;         // standalone: a Mabee DAC answered
 } d9_status_t;
 extern d9_status_t g_d9s;
 
-enum { CV_RESET = 0, CV_RUN };
 typedef struct {
     int8_t midi_ch;     // notes in: 0 omni, 1..16, -1 off
-    bool cv_on;         // standalone: the clock on the Mabee DAC
-    uint8_t cv_div;     // clock: a pulse every 2 (1/16), 4 (1/8) or 8 (1/4) steps
-    uint8_t cv_vout1;   // CV_RESET: a pulse each bar; CV_RUN: high while playing
 } d9_settings_t;
 extern d9_settings_t g_d9set;
 
@@ -78,11 +73,6 @@ bool d9_proj_save(const char *name);   // new, or over the one with that name
 bool d9_proj_load(int i);
 bool d9_proj_delete(int i);
 extern char g_d9_proj_cur[D9_PROJECT_NAME + 1];   // the one loaded / saved last
-
-// --- CV clock (standalone: no other app in the image drives the DACs) --------------
-
-bool d9_cv_available(void);
-void d9_cv_apply(void);   // after g_d9set.cv_* changed
 
 #ifdef __cplusplus
 }

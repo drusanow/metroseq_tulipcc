@@ -190,13 +190,161 @@ static void h_locate(void *x, int64_t t, uint32_t p) {
 static void h_pulse(void *x, int64_t t, uint32_t p) {
     FOR_ON(if (s->pulse) s->pulse(s->ctx, t, p));
 }
+// rt_init() done: the rt task's own record (an app's hooks run only after)
+static bool s_rt_on[STUDIO_MAX_MODULES];
+
 static void h_tempo(void *x, int64_t p16, int32_t bpm_x100) {
-    // every module keeps the tempo, enabled or not
+    // every started module keeps the tempo, on or off
     for (int i = 0; i < g_nmods; i++)
-        if (g_mods[i]->sink.tempo) g_mods[i]->sink.tempo(g_mods[i]->sink.ctx, p16, bpm_x100);
+        if (s_rt_on[i] && g_mods[i]->sink.tempo) g_mods[i]->sink.tempo(g_mods[i]->sink.ctx, p16, bpm_x100);
+}
+
+// rt task: an app switched on for the first time
+static void start_module(int i) {
+    if (i >= g_nmods || s_rt_on[i]) return;
+    const tmod_t *m = g_mods[i];
+    if (m->rt_init) m->rt_init();
+    if (m->sink.tempo) m->sink.tempo(m->sink.ctx, s_clk.tl.p16_us, s_clk.tl.bpm_x100);
+    s_rt_on[i] = true;
 }
 
 static void clock_out_fn(void *ctx, const uint8_t *b, int n) { midi_io_write(b, n); }
+
+// --- the CV clock: drum machines' clock on the Mabee DAC ----------------------------------
+//
+// When a drum machine is on and no app that drives the DACs (a sequencer's
+// gate and pitch) is, the Studio sends the clock itself on the DAC at 0x59:
+// VOUT0 a square wave locked to the 1/32 grid (1/16, 1/8 or 1/4), VOUT1 a
+// one-step pulse on each downbeat (RESET) or high while running (RUN).
+// Every app gets it the same way, standalone or in the Studio.
+
+#define CV_ADDR       0x59
+#define CV_HZ         400000
+#define CV_HIGH       0x8000            // 5 V of the 0-10 V range
+#define CV_STEP_UNITS (TC_U16 / 2)      // a 1/32 step
+
+static i2c_master_dev_handle_t s_cv;
+static int s_cv_state = CVCLK_OFF;
+static int8_t s_cv_lvl[2] = {-1, -1};
+static uint8_t s_cv_fails;
+static int s_cv_ramp = -1;
+static int64_t s_cv_ramp_next = INT64_MAX;
+static bool s_cv_probed;
+
+static bool cv_write(int ch, uint16_t code) {
+    if (!s_cv) return false;
+    uint8_t b[3] = {(uint8_t)(ch ? 0x04 : 0x02), (uint8_t)(code & 0xff), (uint8_t)(code >> 8)};
+    if (i2c_master_transmit(s_cv, b, 3, 5) == ESP_OK) {
+        s_cv_fails = 0;
+        return true;
+    }
+    if (++s_cv_fails >= 5) {
+        ESP_LOGW(TAG, "CV clock: the DAC stopped answering");
+        s_cv_probed = false;
+        s_cv = NULL;
+    }
+    return false;
+}
+
+static void cv_level(int ch, bool high) {
+    if (s_cv_lvl[ch] == high) return;
+    if (cv_write(ch, high ? CV_HIGH : 0)) s_cv_lvl[ch] = high;
+}
+
+// who may drive the DACs now
+static int cv_wanted(void) {
+    bool drums = false;
+    for (int i = 0; i < g_nmods; i++) {
+        if (!g_enabled[i]) continue;
+        if (g_mods[i]->flags & TMOD_F_CV) return CVCLK_SEQUENCER;   // gate + pitch win
+        if (g_mods[i]->role == TMOD_DRUMS) drums = true;
+    }
+    if (!drums) return CVCLK_NO_DRUMS;
+    return g_cfg.cv_clock ? CVCLK_ON : CVCLK_OFF;
+}
+
+static void cv_bringup(int64_t now) {
+    s_cv_probed = true;
+    if (!s_cv) {
+        i2c_device_config_t cfg = {.dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = CV_ADDR,
+                                   .scl_speed_hz = CV_HZ};
+        if (i2c_master_bus_add_device(s_bus, &cfg, &s_cv) != ESP_OK) s_cv = NULL;
+    }
+    if (!s_cv) return;
+    uint8_t range[2] = {0x01, 0x11};   // 0-10 V
+    i2c_master_transmit(s_cv, range, 2, 5);
+    if (!(cv_write(0, 0) && cv_write(1, 0))) {
+        s_cv = NULL;   // no DAC: leave the bus alone
+        return;
+    }
+    s_cv_lvl[0] = s_cv_lvl[1] = 0;
+    s_cv_ramp = 0;   // soft start: ease VOUT0 up and down once
+    s_cv_ramp_next = now;
+    ESP_LOGI(TAG, "CV clock on the DAC at 0x%02x", CV_ADDR);
+}
+
+static void cvclk_init(void) { s_cv_state = cv_wanted(); }
+
+static void cvclk_settings(int64_t now) {
+    (void)now;
+    s_cv_lvl[0] = s_cv_lvl[1] = -1;   // write the next levels whatever we think they are
+}
+
+static int64_t cvclk_next_due(void) {
+    if (s_cv_ramp >= 0) return s_cv_ramp_next;
+    if (s_cv_state != CVCLK_ON || !s_cv || !s_clk.tl.running) return INT64_MAX;
+    int64_t pos = tclock_tl_pos(&s_clk.tl, now_us());
+    int64_t nxt = (pos < 0 ? 0 : (pos / CV_STEP_UNITS + 1)) * CV_STEP_UNITS;
+    return tclock_tl_time(&s_clk.tl, nxt);
+}
+
+static void cvclk_advance(int64_t now) {
+    int want = cv_wanted();
+    if (want != s_cv_state) {
+        // giving the DAC up (to a sequencer, or switched off): leave it low
+        if (s_cv_state == CVCLK_ON && s_cv && s_cv_ramp < 0) {
+            cv_level(0, false);
+            cv_level(1, false);
+        }
+        s_cv_state = want;
+        s_cv_lvl[0] = s_cv_lvl[1] = -1;
+    }
+    if (s_cv_state != CVCLK_ON) return;
+    if (!s_cv_probed) cv_bringup(now);
+    if (!s_cv) return;
+    if (s_cv_ramp >= 0) {
+        if (now < s_cv_ramp_next) return;
+        if (s_cv_ramp > 32) {
+            cv_write(0, 0);
+            s_cv_lvl[0] = 0;
+            s_cv_ramp = -1;
+            s_cv_ramp_next = INT64_MAX;
+        } else {
+            int k = s_cv_ramp <= 16 ? s_cv_ramp : 32 - s_cv_ramp;
+            cv_write(0, (uint16_t)(CV_HIGH * k / 16));
+            s_cv_lvl[0] = -1;
+            s_cv_ramp++;
+            s_cv_ramp_next += 40000;
+        }
+        return;
+    }
+    if (!s_clk.tl.running) {
+        cv_level(0, false);
+        cv_level(1, false);
+        return;
+    }
+    int64_t pos = tclock_tl_pos(&s_clk.tl, now + TC_LOOKAHEAD_US);
+    if (pos < 0) return;
+    int step = (int)((pos / CV_STEP_UNITS) % 32);
+    int div = g_cfg.cv_div;
+    cv_level(0, (step % div) < div / 2);
+    cv_level(1, g_cfg.cv_vout1 == CV_V1_RUN ? true : step == 0);
+}
+
+int studio_cv_clock_state(void) {
+    if (s_cv_state == CVCLK_ON && s_cv_probed && !s_cv) return CVCLK_NO_DAC;
+    return s_cv_state;
+}
 
 // --- commands -------------------------------------------------------------------------
 
@@ -244,8 +392,10 @@ static void handle_cmd(const rt_msg_t *m, int64_t now) {
         if (g_mods[i]->rt_enable) g_mods[i]->rt_enable(on, now);
         break;
     }
+    case HC_START: start_module(m->mod); break;
+    case HC_CV: cvclk_settings(now); break;
     case HC_MODULE:
-        if (m->mod < g_nmods && g_mods[m->mod]->rt_cmd)
+        if (m->mod < g_nmods && s_rt_on[m->mod] && g_mods[m->mod]->rt_cmd)
             g_mods[m->mod]->rt_cmd(m->cmd, m->arg, now);
         break;
     }
@@ -292,10 +442,12 @@ static void out_service(int64_t now) {
 static int64_t engines_next_due(void) {
     int64_t due = tclock_next_due(&s_clk);
     for (int i = 0; i < g_nmods; i++) {
-        if (!g_mods[i]->rt_next_due) continue;
+        if (!s_rt_on[i] || !g_mods[i]->rt_next_due) continue;
         int64_t d = g_mods[i]->rt_next_due();
         if (d < due) due = d;
     }
+    int64_t cv = cvclk_next_due();
+    if (cv < due) due = cv;
     if (s_nout > 0 && s_out[0].t < due) due = s_out[0].t;
     return due;
 }
@@ -344,7 +496,8 @@ static void rt_task(void *arg) {
     s_touch_ok = gt911_init(s_bus, TOUCH_I2C_HZ);
     s_touch_next = now_us();
     for (int i = 0; i < g_nmods; i++)
-        if (g_mods[i]->rt_init) g_mods[i]->rt_init();
+        if (g_started[i]) start_module(i);   // on its own: the app, now
+    cvclk_init();
     midi_io_start();   // once the loop is about to run: no backlog of stale clocks
     ESP_LOGI(TAG, "real-time task on core %d, prio %d", xPortGetCoreID(), RT_PRIORITY);
 
@@ -357,9 +510,10 @@ static void rt_task(void *arg) {
         int64_t now = now_us();
         for (int i = 0; i < g_nmods; i++) {
             const tmod_t *m = g_mods[i];
-            if (m->rt_advance && m->rt_next_due && m->rt_next_due() <= now + TC_LOOKAHEAD_US)
+            if (s_rt_on[i] && m->rt_advance && m->rt_next_due && m->rt_next_due() <= now + TC_LOOKAHEAD_US)
                 m->rt_advance(now_us());
         }
+        cvclk_advance(now_us());
         tclock_advance(&s_clk, now_us());
 
         // MIDI clock: everything due before it has been done above, so each
@@ -378,7 +532,7 @@ static void rt_task(void *arg) {
         int64_t touch_due = touch_service(now_us());
         now = now_us();
         for (int i = 0; i < g_nmods; i++)
-            if (g_mods[i]->rt_poll) g_mods[i]->rt_poll(now);
+            if (s_rt_on[i] && g_mods[i]->rt_poll) g_mods[i]->rt_poll(now);
         publish();
 
         int64_t due = engines_next_due();
@@ -426,6 +580,17 @@ void studio_set_clock_out(bool on) {
     cfg_changed();
 }
 bool studio_clock_out(void) { return g_cfg.clock_out; }
+
+void studio_set_cv_clock(bool on, int div, int vout1) {
+    g_cfg.cv_clock = on;
+    if (div == 2 || div == 4 || div == 8) g_cfg.cv_div = (uint8_t)div;
+    if (vout1 == CV_V1_RESET || vout1 == CV_V1_RUN) g_cfg.cv_vout1 = (uint8_t)vout1;
+    rt_post(HC_CV, 0, 0, 0);
+    cfg_changed();
+}
+bool studio_cv_clock(void) { return g_cfg.cv_clock; }
+int studio_cv_clock_div(void) { return g_cfg.cv_div; }
+int studio_cv_clock_vout1(void) { return g_cfg.cv_vout1; }
 
 void studio_set_mmc(bool on) {
     g_cfg.mmc = on;

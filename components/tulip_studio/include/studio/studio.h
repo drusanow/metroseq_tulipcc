@@ -42,7 +42,7 @@ extern "C" {
 
 struct cJSON;
 
-#define STUDIO_MAX_MODULES  6
+#define STUDIO_MAX_MODULES  16
 #define STUDIO_SR           44100
 #define STUDIO_BLOCK        48        // frames per render() call (1.09 ms)
 
@@ -148,7 +148,18 @@ typedef struct tmod {
 
 // Start everything: the module list, in switcher order. Never returns
 // control to the caller's flow (app_main may return).
+//
+// One image holds every app. The launcher says how to start it
+// (tulip_boot_mode_get): one app on its own (the list is cut down to that
+// app, which starts at once), or the Studio, where every app starts OFF
+// and is only started - init(), then rt_init() - when it's switched ON.
 void studio_run(const tmod_t *const *mods, int n);
+
+// True once the app has been started (its init() has run).
+bool studio_module_started(int i);
+// Studio: switch an app ON (starting it the first time) or OFF. UI task.
+void studio_module_set_on(int i, bool on);
+bool studio_module_on(int i);   // as the UI last set it
 
 int studio_module_count(void);
 const tmod_t *studio_module(int i);
@@ -170,6 +181,18 @@ void studio_set_clock_out(bool on);
 bool studio_clock_out(void);
 void studio_set_mmc(bool on);     // MMC: in when following MIDI, out on internal
 bool studio_mmc(void);
+
+// The CV clock: when a drum machine is on and no app drives the DACs (a
+// sequencer's gate + pitch), the Studio sends a clock on the Mabee DAC at
+// 0x59 - VOUT0 the clock (div: a pulse every 2, 4 or 8 1/32 steps = 1/16,
+// 1/8, 1/4), VOUT1 a reset pulse each bar or high while running.
+enum { CV_V1_RESET = 0, CV_V1_RUN = 1 };
+enum { CVCLK_OFF = 0, CVCLK_ON, CVCLK_NO_DAC, CVCLK_SEQUENCER, CVCLK_NO_DRUMS };
+void studio_set_cv_clock(bool on, int div, int vout1);   // div / vout1 < 0: unchanged
+bool studio_cv_clock(void);
+int studio_cv_clock_div(void);
+int studio_cv_clock_vout1(void);
+int studio_cv_clock_state(void);   // CVCLK_*, what it's doing now
 
 void studio_set_bpm_x100(int32_t bpm_x100);
 int32_t studio_bpm_x100(void);    // the set tempo
@@ -244,6 +267,13 @@ float studio_mix_peak(int mod);
 // The two Tulip squares (blue: next app, red: Studio home / launcher), at
 // the top right of parent's screen - the same on every app.
 lv_obj_t *studio_chrome(lv_obj_t *parent);
+// The I/O the runtime gives every app by its role - clock source, MIDI clock
+// out, the CV clock (drums) - as a 330 x 276 panel for the app's settings
+// page. It keeps itself up to date.
+lv_obj_t *studio_io_panel(lv_obj_t *parent, int x, int y, const tmod_t *m, uint32_t accent);
+// The CV clock alone on one 430-wide row of height h (a drum machine's page
+// with no room for the whole panel): on / off, its rate, VOUT1 reset / run.
+lv_obj_t *studio_cv_strip(lv_obj_t *parent, int x, int y, int h, uint32_t accent);
 void studio_show_home(void);
 void studio_next_app(void);
 void studio_show_module(int i);
