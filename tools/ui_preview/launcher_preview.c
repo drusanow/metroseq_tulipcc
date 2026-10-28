@@ -25,7 +25,7 @@ tulip_settings_t g_tulip = {.cal = TOUCH_CAL_DEFAULT, .brightness = 7, .cal_prom
 void tulip_settings_save(void) {}
 void tulip_display_set_brightness(int level) {}
 lsettings_t g_ls = {.wifi_on = 1, .web_on = 1, .pin = "4821", .ssid = "Studio-5G",
-                    .last_app = "/files/apps/metroseq.bin"};
+                    .last_app = "/files/apps/studio.bin"};
 void lsettings_save(void) {}
 void lsettings_new_pin(void) { strcpy(g_ls.pin, "3907"); }
 wifi_status_t g_wifi = {.state = WIFI_ST_CONNECTED, .ssid = "Studio-5G", .ip = "192.168.1.42",
@@ -64,14 +64,11 @@ typedef struct {
     int slot;
 } fake_app_t;
 static const fake_app_t APPS[] = {
-    {"gintonix.bin", "gintonix", "1.0.0", 815104, 2},
     {"hello.bin", "hello", "1.0.0", 588800, -1},
-    {"metroseq.bin", "metroseq", "2.0.0", 740976, 1},
-    {"sloe.bin", "sloe", "1.0.0", 793248, 3},
-    {"studio.bin", "studio", "1.0.0", 950818, 0},
-    {"wavetron.bin", "wavetron", "1.0.0", 800480, 4},
+    {"metroseq.bin", "metroseq", "2.0.0", 740976, 1},   // an older install's: hidden
+    {"studio.bin", "studio", "2.0.0", 1015376, 0},
 };
-#define NAPPS 6
+#define NAPPS 3
 int apps_scan(app_entry_t *out, int max) {
     for (int i = 0; i < NAPPS; i++) {
         memset(&out[i], 0, sizeof out[i]);
@@ -96,6 +93,25 @@ bool apps_read_info(const char *path, app_info_t *info, uint32_t *size) {
     return false;
 }
 bool apps_launch(const char *path) { return true; }
+bool apps_launch_as(const char *path, const char *mode, const char *title) { return true; }
+bool apps_read_manifest(const char *path, app_manifest_t *m) {
+    static const app_manifest_entry_t E[] = {
+        {"metroseq", "METROSEQ", APP_ROLE_SEQUENCER, {0}, "Metropolix-style 2-track sequencer: gate + 1 V/oct on the Mabee DACs"},
+        {"gintonix", "GINTONIX", APP_ROLE_DRUMS, {0}, "Microtonic-style drum machine: 8 synth drums, 12 patterns, morph, fills"},
+        {"sloe", "SLOE", APP_ROLE_SYNTH, {0}, "Subtractive synth: 2 oscillators, filter, 6 voices or mono with glide"},
+        {"wavetron", "WAVETRON", APP_ROLE_SYNTH, {0}, "Dual wavetable synth: 4 voices, unison, a mod matrix, effects"},
+        {"drumster9", "DRUMSTER9", APP_ROLE_DRUMS, {0}, "32-step sample drum machine: 7 Gamma 9001 kits, A-J patterns, 4 FX buses"},
+    };
+    if (!strstr(path, "studio.bin")) return false;
+    memset(m, 0, sizeof *m);
+    m->magic = APP_MANIFEST_MAGIC;
+    m->version = APP_MANIFEST_VERSION;
+    m->count = 5;
+    memcpy(m->app, E, sizeof E);
+    return true;
+}
+void tulip_boot_mode_set(const char *mode) {}
+void tulip_boot_mode_get(char *out, int len) { snprintf(out, len, "%s", ""); }
 int apps_slots(app_slot_t out[APP_SLOTS]) {
     memset(out, 0, sizeof(app_slot_t) * APP_SLOTS);
     out[0].used = 1;

@@ -1,20 +1,25 @@
-// main.c - Tulip Studio: metroseq (sequencer, CV), GinTonix and Drumster9
-// (drums), Sloe and Wavetron (synths) all running at once on one master clock. Switch between
-// them with the blue square; route metroseq's tracks to a synth (or MIDI OUT)
-// on the Studio home page (red square).
-//
-// To build your own combination, list the modules you want here (and in
-// main/CMakeLists.txt). Each module also builds on its own (apps/metroseq,
-// apps/gintonix).
-#include "mod_drumster9.h"
-#include "mod_gintonix.h"
-#include "mod_metroseq.h"
-#include "mod_sloe.h"
-#include "mod_wavetron.h"
+// main.c - Tulip Studio: every app in modules/ in one firmware (the list is
+// generated from their app.json files, see main/CMakeLists.txt). The
+// launcher starts it as the Studio - all the apps on one master clock, each
+// switched on from the home page - or as one app on its own (the boot mode,
+// tulip_boot_mode_set()).
+#include <string.h>
+
+#include "esp_log.h"
+#include "studio/studio.h"
+#include "tulip/app_manifest.h"
+
+extern const tmod_t *const g_studio_apps[];
+extern const int g_studio_napps;
+extern const app_manifest_t g_studio_manifest;
 
 void app_main(void) {
-    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe, &mod_wavetron,
-                                           // last: saved routes and open apps go by position
-                                           &mod_drumster9};
-    studio_run(mods, sizeof mods / sizeof mods[0]);
+    // the manifest must say what the modules are (and referring to it here
+    // keeps the linker from dropping it)
+    for (int i = 0; i < g_studio_napps; i++) {
+        const app_manifest_entry_t *e = &g_studio_manifest.app[i];
+        if (strcmp(e->name, g_studio_apps[i]->name) || e->role != g_studio_apps[i]->role)
+            ESP_LOGW("studio", "app.json of %s doesn't match its tmod_t (name / role)", g_studio_apps[i]->name);
+    }
+    studio_run(g_studio_apps, g_studio_napps);
 }

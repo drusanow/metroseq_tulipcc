@@ -82,8 +82,10 @@ static void power_cb(lv_event_t *e) {
 static void wifi_cb(lv_event_t *e) { ui_show_page(PG_WIFI); }
 
 static void top_bar(lv_obj_t *scr) {
-    lv_obj_t *t = th_text(scr, "TULIP", 18, 12, TH_FG, &lv_font_montserrat_28);
-    lv_obj_set_style_text_letter_space(t, 3, 0);
+    lv_obj_t *t = th_text(scr, "TULIP", 18, 4, TH_FG, &lv_font_montserrat_20);
+    lv_obj_set_style_text_letter_space(t, 4, 0);
+    t = th_text(scr, "STUDIO", 19, 28, TH_ORANGE, &lv_font_montserrat_14);
+    lv_obj_set_style_text_letter_space(t, 5, 0);
     for (int i = 0; i < PG_COUNT; i++)
         U.tabs[i] = th_btn(scr, TABS[i], 150 + i * 106, 10, 100, 36, tab_cb, (void *)(intptr_t)i);
     U.status = th_text(scr, "", 692, 20, TH_ORANGE, &lv_font_montserrat_14);
@@ -98,6 +100,10 @@ static void top_bar(lv_obj_t *scr) {
 
 void ui_launch(const char *path) {
     if (!apps_launch(path)) ui_toast("not an app, or busy");
+}
+
+void ui_launch_as(const char *path, const char *mode, const char *title) {
+    if (!apps_launch_as(path, mode, title)) ui_toast("not an app, or busy");
 }
 
 static void inst_ok_cb(lv_event_t *e) {
@@ -176,6 +182,12 @@ static void after_cal(void) {
     lv_obj_set_style_text_align(h, LV_TEXT_ALIGN_CENTER, 0);
     U.auto_t0 = lv_tick_get();
     snprintf(U.auto_name, sizeof U.auto_name, "%s", info.name);
+    if (!strcmp(info.name, "studio")) {   // Tulip Studio: the Studio, or the app it ran last
+        char mode[24];
+        tulip_boot_mode_get(mode, sizeof mode);
+        snprintf(U.auto_name, sizeof U.auto_name, "%s", mode[0] ? mode : "TULIP STUDIO");
+    }
+    for (char *c = U.auto_name; *c; c++) *c = (*c >= 'a' && *c <= 'z') ? *c - 32 : *c;
 }
 
 static void autostart_poll(void) {
@@ -203,7 +215,7 @@ static struct {
 
 static void boot_create(void) {
     B.box = th_box(lv_screen_active(), 0, 0, SCR_W, SCR_H);
-    lv_obj_t *t = th_text(B.box, "TULIP", 212, 140, TH_FG, &lv_font_montserrat_28);
+    lv_obj_t *t = th_text(B.box, "TULIP STUDIO", 212, 140, TH_FG, &lv_font_montserrat_28);
     lv_obj_set_style_text_letter_space(t, 3, 0);
     B.title = th_title(B.box, "", 212, 200, TH_ORANGE);
     B.bar = lv_bar_create(B.box);

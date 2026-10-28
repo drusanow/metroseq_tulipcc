@@ -1,0 +1,6 @@
+{
+    "name": "metroseq",
+    "title": "METROSEQ",
+    "role": "sequencer",
+    "blurb": "Metropolix-style 2-track sequencer: gate + 1 V/oct on the Mabee DACs"
+}

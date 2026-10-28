@@ -113,19 +113,61 @@ static void test_appimg(void) {
     CHECK(!appimg_parse(b, sizeof b, &info), "no app description rejected");
     CHECK(!appimg_parse(b, 40, &info), "short buffer rejected");
 
-    // The real thing: the metroseq app built by idf.py, if it's been built.
-    const char *real = "../apps/metroseq/build/metroseq.bin";
+    // The real thing: Tulip Studio built by idf.py, if it's been built.
+    const char *real = "../apps/studio/build/studio.bin";
     FILE *f = fopen(real, "rb");
     if (f) {
         uint8_t h[APPIMG_HEADER_BYTES];
         size_t n = fread(h, 1, sizeof h, f);
         fclose(f);
-        CHECK(appimg_parse(h, n, &info) && strcmp(info.name, "metroseq") == 0,
-              "real metroseq.bin: name '%s'", info.name);
+        CHECK(appimg_parse(h, n, &info) && strcmp(info.name, "studio") == 0,
+              "real studio.bin: name '%s'", info.name);
         printf("appimg: fake images ok; real %s -> \"%s\" v%s (IDF %s)\n", real, info.name,
                info.version, info.idf);
     } else {
-        printf("appimg: fake images ok (build apps/metroseq to also check a real image)\n");
+        printf("appimg: fake images ok (build apps/studio to also check a real image)\n");
+    }
+}
+
+// Tulip Studio's app list, right after the app description
+static void test_manifest(void) {
+    static uint8_t b[APP_MANIFEST_END + 16];
+    app_manifest_t m;
+    memset(b, 0, sizeof b);
+    fake_image(b, "studio", "2.0.0", 3);
+    CHECK(!appimg_manifest(b, sizeof b, &m), "no manifest rejected");
+    app_manifest_t w = {.magic = APP_MANIFEST_MAGIC, .version = APP_MANIFEST_VERSION, .count = 2};
+    snprintf(w.app[0].name, sizeof w.app[0].name, "metroseq");
+    snprintf(w.app[0].title, sizeof w.app[0].title, "METROSEQ");
+    w.app[0].role = APP_ROLE_SEQUENCER;
+    snprintf(w.app[1].name, sizeof w.app[1].name, "sloe");
+    w.app[1].role = 9;                                        // unknown: treated as a synth
+    memset(w.app[1].blurb, 'x', sizeof w.app[1].blurb);       // unterminated
+    memcpy(b + APP_MANIFEST_OFFSET, &w, sizeof w);
+    CHECK(appimg_manifest(b, sizeof b, &m) && m.count == 2 && !strcmp(m.app[0].title, "METROSEQ") &&
+              m.app[0].role == APP_ROLE_SEQUENCER,
+          "manifest parsed");
+    CHECK(!strcmp(m.app[1].title, "sloe") && m.app[1].role == APP_ROLE_SYNTH &&
+              strlen(m.app[1].blurb) == sizeof m.app[1].blurb - 1,
+          "manifest: title defaults to the name, role and strings bounded");
+    CHECK(!appimg_manifest(b, APP_MANIFEST_END - 1, &m), "short buffer rejected");
+    b[APP_MANIFEST_OFFSET + 6] = APP_MANIFEST_MAX + 1;   // count
+    CHECK(!appimg_manifest(b, sizeof b, &m), "too many apps rejected");
+    b[APP_MANIFEST_OFFSET + 6] = 2;
+    b[APP_MANIFEST_OFFSET] ^= 1;
+    CHECK(!appimg_manifest(b, sizeof b, &m), "bad magic rejected");
+
+    FILE *f = fopen("../apps/studio/build/studio.bin", "rb");
+    if (f) {
+        size_t n = fread(b, 1, APP_MANIFEST_END, f);
+        fclose(f);
+        CHECK(appimg_manifest(b, n, &m) && m.count >= 5 && !strcmp(m.app[0].name, "metroseq"),
+              "real studio.bin manifest");
+        printf("manifest: fake ok; studio.bin holds %d apps:", m.count);
+        for (int i = 0; i < m.count; i++) printf(" %s(%d)", m.app[i].name, m.app[i].role);
+        printf("\n");
+    } else {
+        printf("manifest: fake ok\n");
     }
 }
 
@@ -149,6 +191,7 @@ static void test_slots(void) {
 int main(void) {
     test_paths();
     test_appimg();
+    test_manifest();
     test_slots();
     printf(failures ? "\n%d FAILURES\n" : "\nall launcher tests passed\n", failures);
     return failures ? 1 : 0;

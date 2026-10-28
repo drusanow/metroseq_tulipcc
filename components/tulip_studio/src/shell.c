@@ -29,6 +29,8 @@ static void build(int i);
 
 // ON starts the app the first time (studio.c), and builds its screen: an
 // app's screen polls its MIDI / CCs even while hidden
+static void home_refresh(void);
+
 static void set_on(int i, bool on) {
     studio_module_set_on(i, on);
     if (on) build(i);
@@ -37,6 +39,7 @@ static void set_on(int i, bool on) {
 void shell_set_open(int i, bool on) {
     if (i < 0 || i >= g_nmods) return;
     set_on(i, on);
+    home_refresh();
 }
 
 static lv_obj_t *new_screen(void) {
@@ -48,7 +51,6 @@ static lv_obj_t *new_screen(void) {
     return scr;
 }
 
-static void home_refresh(void);
 
 static void build(int i) {
     if (s_scr[i]) return;
@@ -185,6 +187,7 @@ static struct {
     // mixer
     lv_obj_t *mute[STUDIO_MAX_MODULES], *meter[STUDIO_MAX_MODULES];
     sw_slider_t *fader[STUDIO_MAX_MODULES];
+    lv_obj_t *strip[STUDIO_MAX_MODULES];   // the mixer strip: hidden while the app is off
     int meter_px[STUDIO_MAX_MODULES];
     int play_shown, bpm_shown;
     uint32_t mon_seq;
@@ -227,6 +230,8 @@ static void h_mute(void *ud) {
 static void mixer_strip(lv_obj_t *t, int i, int y) {
     int w = TILE_W - 2 * 10 - 44;
     s_meter_w = w;
+    t = H.strip[i] = sw_box(t, 0, y, TILE_W - 4, 52, -1, 0);
+    y = 0;
     H.mute[i] = sw_btn(t, "M", 10, y + 17, 36, 30, SW_RED, h_mute, (void *)(intptr_t)i, NULL);
     sw_btn_set(H.mute[i], studio_mix_muted(i));
     H.fader[i] = sw_slider(t, "LEVEL", 54, y, w, 44, SW_GREEN, &MIX_OPS, (void *)(intptr_t)i);
@@ -588,10 +593,14 @@ static void home_refresh(void) {
         lv_obj_set_style_border_color(H.tile[i], sw_c(on ? SW_EDGE : SW_LINE), 0);
         sw_btn_text(H.on_b[i], on ? "ON" : "OFF");
         sw_btn_set(H.on_b[i], on);
-        if (on)
-            lv_obj_remove_flag(H.show_b[i], LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_add_flag(H.show_b[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *only_on[2] = {H.show_b[i], H.strip[i]};
+        for (int j = 0; j < 2; j++) {
+            if (!only_on[j]) continue;
+            if (on)
+                lv_obj_remove_flag(only_on[j], LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(only_on[j], LV_OBJ_FLAG_HIDDEN);
+        }
     }
     if (H.app_page) lv_label_set_text_fmt(H.app_page, "%d / %d", H.page + 1, pages);
     // routing: the rows of the sequencers that are on, a page of 4

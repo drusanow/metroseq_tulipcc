@@ -61,9 +61,15 @@ int apps_scan(app_entry_t *out, int max);
 // Read an app's description from its file. False if it isn't an app.
 bool apps_read_info(const char *path, app_info_t *info, uint32_t *size);
 
+// The apps inside a Tulip Studio image (its manifest). False if it isn't one.
+bool apps_read_manifest(const char *path, app_manifest_t *m);
+
 // Start launching (in the background; watch g_install). False if busy or
-// not an app.
+// not an app. mode: how a Tulip Studio image starts - "" the Studio, or an
+// app's name to run it on its own (tulip_boot_mode_set); title: what the
+// progress screen calls it (NULL: the image's name).
 bool apps_launch(const char *path);
+bool apps_launch_as(const char *path, const char *mode, const char *title);
 
 int apps_slots(app_slot_t out[APP_SLOTS]);
 void apps_clear_slots(void);

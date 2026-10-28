@@ -142,6 +142,9 @@ int main(void) {
     studio_route_set(0, 1, ROUTE_MIDI_OUT);
     preview_ui_create();
     preview_set_clock(true, false, false, 0);
+    hx_pump(300);
+    hx_save("studio_0_home_all_off");   // the Studio starts with every app off
+    for (int i = 0; i < 5; i++) shell_set_open(i, true);
     hx_pump(600);
     hx_save("studio_1_home");
 

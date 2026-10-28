@@ -36,6 +36,26 @@ bool appimg_parse(const uint8_t *buf, size_t len, app_info_t *out) {
     return out->name[0] != 0;
 }
 
+bool appimg_manifest(const uint8_t *buf, size_t len, app_manifest_t *out) {
+    if (len < (size_t)APP_MANIFEST_END) return false;
+    app_info_t info;
+    if (!appimg_parse(buf, len, &info)) return false;
+    memcpy(out, buf + APP_MANIFEST_OFFSET, sizeof *out);   // byte copy: buf may be unaligned
+    if (out->magic != APP_MANIFEST_MAGIC || out->version != APP_MANIFEST_VERSION || out->count == 0 ||
+        out->count > APP_MANIFEST_MAX)
+        return false;
+    for (int i = 0; i < out->count; i++) {
+        app_manifest_entry_t *e = &out->app[i];
+        e->name[sizeof e->name - 1] = 0;
+        e->title[sizeof e->title - 1] = 0;
+        e->blurb[sizeof e->blurb - 1] = 0;
+        if (!e->name[0]) return false;
+        if (!e->title[0]) memcpy(e->title, e->name, sizeof e->title);
+        if (e->role > APP_ROLE_SYNTH) e->role = APP_ROLE_SYNTH;
+    }
+    return true;
+}
+
 int slots_find(const app_slot_t *s, int n, const uint8_t sha[32], uint32_t size) {
     for (int i = 0; i < n; i++)
         if (s[i].used && s[i].size == size && memcmp(s[i].elf_sha, sha, 32) == 0) return i;

@@ -13,6 +13,8 @@ enum { PG_HOME = 0, PG_FILES, PG_WIFI, PG_SETTINGS, PG_CONSOLE, PG_COUNT };
 void ui_show_page(int page);
 void ui_toast(const char *msg);   // 3 s message in the top bar
 void ui_launch(const char *path);   // confirm-free launch with progress overlay
+// Tulip Studio: mode "" the Studio, or an app's name to run it on its own
+void ui_launch_as(const char *path, const char *mode, const char *title);
 
 // pages: create once, show/hide, poll while visible
 void home_create(lv_obj_t *page);

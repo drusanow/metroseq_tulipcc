@@ -21,6 +21,7 @@
 #include "lsettings.h"
 #include "nvs.h"
 #include "tulip/fs.h"
+#include "tulip/sys.h"
 
 static const char *TAG = "apps";
 
@@ -87,6 +88,15 @@ bool apps_read_info(const char *path, app_info_t *info, uint32_t *size) {
     if (!appimg_parse(buf, n, info)) return false;
     *size = (uint32_t)sz;
     return true;
+}
+
+bool apps_read_manifest(const char *path, app_manifest_t *m) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    static uint8_t buf[APP_MANIFEST_END];   // UI task only; 2 KB off its stack
+    size_t n = fread(buf, 1, sizeof buf, f);
+    fclose(f);
+    return appimg_manifest(buf, n, m);
 }
 
 // Length of the valid image in a slot (0 if none).
@@ -249,7 +259,7 @@ static void install_task(void *arg) {
         fail("not a Tulip app (no ESP32-S3 app header)");
         vTaskDelete(NULL);
     }
-    snprintf(g_install.name, sizeof g_install.name, "%s", info.name);
+    if (!g_install.name[0]) snprintf(g_install.name, sizeof g_install.name, "%s", info.name);
     xSemaphoreTake(s_mx, portMAX_DELAY);
 
     int slot = slots_find(s_tab.s, APP_SLOTS, info.elf_sha, size);
@@ -328,22 +338,26 @@ static void install_task(void *arg) {
     xSemaphoreGive(s_mx);
     g_install.pct = 100;
     g_install.state = INSTALL_STARTING;
-    snprintf(g_install.msg, sizeof g_install.msg, "starting %s", info.name);
+    snprintf(g_install.msg, sizeof g_install.msg, "starting %s", g_install.name);
     ESP_LOGI(TAG, "launching %s from slot %d", info.name, slot);
     vTaskDelay(pdMS_TO_TICKS(400));   // let the screen show it
     esp_restart();
 }
 
-bool apps_launch(const char *path) {
+bool apps_launch(const char *path) { return apps_launch_as(path, "", NULL); }
+
+bool apps_launch_as(const char *path, const char *mode, const char *title) {
     int st = g_install.state;
     if (st == INSTALL_ERASING || st == INSTALL_WRITING || st == INSTALL_STARTING) return false;
     app_info_t info;
     uint32_t size;
     if (!apps_read_info(path, &info, &size)) return false;
     snprintf(s_launch_path, sizeof s_launch_path, "%s", path);
+    // read by Tulip Studio at its start (other apps ignore it)
+    tulip_boot_mode_set(mode ? mode : "");
     memset(&g_install, 0, sizeof g_install);
     g_install.state = INSTALL_ERASING;
-    snprintf(g_install.name, sizeof g_install.name, "%s", info.name);
+    snprintf(g_install.name, sizeof g_install.name, "%s", title ? title : info.name);
     snprintf(g_install.msg, sizeof g_install.msg, "checking");
     xTaskCreatePinnedToCore(install_task, "install", 6144, NULL, 5, NULL, 0);
     return true;

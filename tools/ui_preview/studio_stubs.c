@@ -95,6 +95,17 @@ int studio_clock_src(void) { return g_cfg.clock_src; }
 void studio_set_clock_out(bool on) { g_cfg.clock_out = on; }
 bool studio_clock_out(void) { return g_cfg.clock_out; }
 void studio_set_mmc(bool on) { g_cfg.mmc = on; }
+void studio_set_cv_clock(bool on, int div, int v1) {
+    g_cfg.cv_clock = on;
+    if (div > 0) g_cfg.cv_div = (uint8_t)div;
+    if (v1 >= 0) g_cfg.cv_vout1 = (uint8_t)v1;
+}
+bool studio_cv_clock(void) { return g_cfg.cv_clock; }
+int studio_cv_clock_div(void) { return g_cfg.cv_div; }
+int studio_cv_clock_vout1(void) { return g_cfg.cv_vout1; }
+int studio_cv_clock_state(void) { return g_cfg.cv_clock ? CVCLK_SEQUENCER : CVCLK_OFF; }
+void tulip_boot_mode_set(const char *m) {}
+void tulip_boot_mode_get(char *out, int len) { snprintf(out, len, "%s", ""); }
 bool studio_mmc(void) { return g_cfg.mmc; }
 void studio_clock_status(studio_clock_status_t *st) { *st = s_st; }
 void studio_timeline(tclock_tl_t *out) {

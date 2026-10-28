@@ -1,21 +1,25 @@
 // studio.h - Tulip Studio: several apps running at once on one clock.
 //
-// A Studio image is built from one or more MODULES (apps compiled in
-// together). They all run at the same time and play to one master clock
-// (tclock.h). You switch between their screens with the blue square in the
-// top-right corner - like the original Tulip - and they keep playing while
-// they're not on screen. The red square goes to the Studio home page (in a
-// single-app image, back to the launcher).
+// The Tulip Studio image holds every app as a MODULE (modules/mod_<name>,
+// see docs/APPS.md). The same module runs on its own (the launcher's app
+// tiles) or in the Studio with the others, all playing to one master clock
+// (tclock.h). In the Studio every app starts OFF; you switch on the ones you
+// want on the home page. The blue square in the top-right corner goes to the
+// next app that is on - like the original Tulip - and they keep playing
+// while they're not on screen. The red square goes to the Studio home page
+// (on its own: back to the launcher).
 //
 // Every module carries a ROLE tag that tells the runtime what to give it:
 //
-//   SEQUENCER  plays to the clock (follows MIDI clock / Start / Stop) and
-//              produces notes: CV out, and tracks you can route to a synth
-//              on the Tulip or to MIDI OUT. (metroseq)
+//   SEQUENCER  plays to the clock: MIDI clock in / out and Start / Stop,
+//              and produces notes - CV gate + pitch, and tracks you route
+//              to a synth on the Tulip or to MIDI OUT. (metroseq)
 //   DRUMS      a drum machine / sampler: plays in time with the clock and
-//              transport, renders audio, no CV. (GinTonix)
+//              transport, renders audio, takes notes from MIDI IN, MIDI
+//              clock in / out, and the runtime's CV clock (Mabee DAC 0x59:
+//              VOUT0 clock, VOUT1 reset / run). (GinTonix, Drumster9)
 //   SYNTH      plays notes - from MIDI IN, or routed from a sequencer
-//              track. (Sloe)
+//              track. (Sloe, Wavetron)
 //
 // Threads, and which module hooks run where:
 //
@@ -104,17 +108,20 @@ typedef struct tmod {
     uint8_t n_note_outs;     // sequencer: routable tracks
     const char *const *note_out_names;   // "TRK 1", ...
 
-    // boot, before any task starts (load settings, allocate)
+    // Start-up: load settings, allocate. On its own: at boot, before any
+    // task starts. In the Studio: when the app is first switched ON (UI
+    // task, while the others play) - so keep it short, and don't touch
+    // what other apps own.
     void (*init)(void);
 
     // --- real-time task (core 1) ---
-    void (*rt_init)(void);                       // I2C bus is up
+    void (*rt_init)(void);                       // after init(); I2C bus is up
     tclock_sink_t sink;                          // clock calls (all optional)
     int64_t (*rt_next_due)(void);                // INT64_MAX = nothing
     void (*rt_advance)(int64_t now);             // do what's due
     void (*rt_cmd)(uint8_t cmd, int32_t arg, int64_t now);   // studio_cmd()
     void (*rt_poll)(int64_t now);                // every pass (publish status)
-    void (*rt_enable)(bool on, int64_t now);     // opened / closed in Studio
+    void (*rt_enable)(bool on, int64_t now);     // switched ON / OFF in the Studio
 
     // --- audio task (core 1) ---
     // ADD this block into l / r (n = STUDIO_BLOCK frames).

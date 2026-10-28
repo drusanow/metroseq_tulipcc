@@ -1,0 +1,6 @@
+{
+    "name": "example",
+    "title": "EXAMPLE",
+    "role": "synth",
+    "blurb": "Template: a sine synth that plays MIDI IN and routed tracks"
+}

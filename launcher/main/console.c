@@ -108,7 +108,7 @@ static int c_ver(int argc, char **argv) {
     const esp_app_desc_t *d = esp_app_get_description();
     esp_chip_info_t ci;
     esp_chip_info(&ci);
-    con_printf("Tulip launcher %s (%s %s), ESP-IDF %s, ESP32-S3 rev %d.%d, %d cores\n", d->version,
+    con_printf("Tulip Studio launcher %s (%s %s), ESP-IDF %s, ESP32-S3 rev %d.%d, %d cores\n", d->version,
                d->date, d->time, d->idf_ver, ci.revision / 100, ci.revision % 100, ci.cores);
     return 0;
 }
