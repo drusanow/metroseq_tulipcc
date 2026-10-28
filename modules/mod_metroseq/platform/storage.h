@@ -22,6 +22,9 @@ void storage_preset_clear(int slot);
 // The slot being played and edited (-1 = none yet); kept across power-off.
 int storage_cur_preset(void);
 void storage_set_cur_preset(int slot);
+// Where a preset comes in while playing (swap_at_t, seq_clock.h); kept too.
+int storage_swap_at(void);
+void storage_set_swap_at(int v);
 
 // Projects (UI task only)
 int storage_project_count(void);

@@ -3,13 +3,14 @@
 //  * The lit (orange) number is the preset you're playing, and it keeps
 //    every change you make - steps, tracks, MOD lanes, settings - saved to
 //    its slot as you go. There is no SAVE button.
-//  * Tap another number: it comes in on the top of TRK 1's sequence (lit
-//    yellow until then), so the change lands on the start of a loop. While
-//    stopped it comes in at once.
+//  * Tap another number: it comes in at the switch point - the next bar by
+//    default (SET page: PRESET SWITCH) - lit yellow until then, and both
+//    tracks start over from their first stage there. While stopped it comes
+//    in at once.
 //  * Tap an empty number: the current pattern is copied there, and that
 //    number becomes the one you're editing.
 //  * COPY takes the current pattern; PASTE puts it over the current preset
-//    (also on the top of the sequence).
+//    (also at the switch point).
 #include <stdio.h>
 #include <string.h>
 
@@ -100,7 +101,10 @@ static void pick(intptr_t i) {
     }
     P.pending = (int)i;
     pat_swap(&p);   // at once when stopped: preset_poll() sees it go in
-    snprintf(msg, sizeof msg, g_status.playing ? "preset %d on the top" : "preset %d", (int)i + 1);
+    if (g_status.playing)
+        snprintf(msg, sizeof msg, "preset %d: %s", (int)i + 1, pat_swap_when());
+    else
+        snprintf(msg, sizeof msg, "preset %d", (int)i + 1);
     say(msg);
     paint();
 }
@@ -121,7 +125,9 @@ static void clip_paste(intptr_t a) {
     P.pending = P.cur;
     pat_swap(&P.clip);
     ui_btn_flash(P.paste);
-    say(g_status.playing ? "pasted on the top" : "pasted");
+    char msg[48];
+    snprintf(msg, sizeof msg, g_status.playing ? "pasted: %s" : "pasted", pat_swap_when());
+    say(msg);
 }
 
 void preset_after_load(void) {
@@ -184,7 +190,8 @@ void preset_poll(void) {
 
 void preset_row_create(lv_obj_t *parent, int y) {
     ui_section(parent, "PRESETS", SEQ_X0, y);
-    lv_obj_t *h = ui_label(parent, "changes save to the lit preset; another comes in on the top of TRK 1",
+    lv_obj_t *h = ui_label(parent, "changes save to the lit preset; another comes in at the switch point "
+                           "(SET page)",
                            SEQ_X0 + 86, y);
     lv_obj_set_style_text_color(h, c332(C_DIM), 0);
     const int bw = 64, gap = 6, by = y + 22, bh = 44;

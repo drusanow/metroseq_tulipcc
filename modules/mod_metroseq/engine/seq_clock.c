@@ -50,11 +50,19 @@ static void s_locate(void *ctx, int64_t t, uint32_t pos16) {
     end(c);
 }
 
+bool seq_clock_swap_point(const seq_clock_t *c, uint32_t pos16) {
+    switch (c->swap_at) {
+    case SWAP_AT_TRK1: return seq_engine_top_next(c->e);
+    case SWAP_AT_2BARS: return pos16 % (2 * MASTER_DIV) == 0;
+    case SWAP_AT_4BARS: return pos16 % (4 * MASTER_DIV) == 0;
+    default: return pos16 % MASTER_DIV == 0;
+    }
+}
+
 static void s_pulse(void *ctx, int64_t t, uint32_t pos16) {
     seq_clock_t *c = ctx;
-    (void)pos16;
     begin(c);
-    if (c->swap_pending && seq_engine_top_next(c->e)) {
+    if (c->swap_pending && seq_clock_swap_point(c, pos16)) {
         take_swap(c);
         c->restart_pending = true;
     }

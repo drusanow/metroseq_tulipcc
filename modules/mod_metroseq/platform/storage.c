@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "engine/seq_clock.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -59,6 +60,7 @@ static volatile uint32_t s_dirty_presets;   // bitmask
 static volatile bool s_dirty_projects;
 static volatile bool s_dirty_cur;
 static int8_t s_cur;
+static int8_t s_swap_at;   // SWAP_AT_BAR unless set
 
 static bool blob_ok(const pat_blob_t *b) {
     return b->magic == BLOB_MAGIC && b->version == PATTERN_VERSION &&
@@ -96,7 +98,7 @@ static void flush_now(void) {
     s_dirty_projects = false;
     bool cur = s_dirty_cur;
     s_dirty_cur = false;
-    int8_t cur_v = s_cur;
+    int8_t cur_v = s_cur, swap_v = s_swap_at;
     static pat_blob_t pb[NUM_PRESETS];
     static proj_bank_t bank;
     memcpy(pb, s_presets, sizeof pb);
@@ -112,7 +114,10 @@ static void flush_now(void) {
     }
     if (proj && nvs_set_blob(h, "projects", &bank, sizeof bank) != ESP_OK)
         ESP_LOGW(TAG, "project write failed");
-    if (cur) nvs_set_i8(h, "cur", cur_v);
+    if (cur) {
+        nvs_set_i8(h, "cur", cur_v);
+        nvs_set_i8(h, "swap_at", swap_v);
+    }
     nvs_commit(h);
     nvs_close(h);
 }
@@ -189,6 +194,7 @@ void storage_init(void) {
         }
         int8_t c;
         if (nvs_get_i8(h, "cur", &c) == ESP_OK && c >= 0 && c < NUM_PRESETS) s_cur = c;
+        if (nvs_get_i8(h, "swap_at", &c) == ESP_OK && c >= 0 && c < SWAP_AT_COUNT) s_swap_at = c;
         nvs_close(h);
     }
     s_proj.magic = BLOB_MAGIC;
@@ -202,6 +208,15 @@ void storage_set_cur_preset(int slot) {
     if (slot == s_cur) return;
     s_cur = (int8_t)slot;
     s_dirty_cur = true;
+    xTaskNotifyGive(s_task);
+}
+
+int storage_swap_at(void) { return s_swap_at; }
+
+void storage_set_swap_at(int v) {
+    if (v == s_swap_at || v < 0 || v >= SWAP_AT_COUNT) return;
+    s_swap_at = (int8_t)v;
+    s_dirty_cur = true;   // written with the current preset
     xTaskNotifyGive(s_task);
 }
 

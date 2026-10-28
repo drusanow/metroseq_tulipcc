@@ -56,6 +56,14 @@ bool pat_swap_cancel(void) {
 }
 uint32_t pat_swap_count(void) { return s_swaps; }
 void pat_swap_poll(void) {}
+static int s_swap_at;
+int pat_swap_at(void) { return s_swap_at; }
+void pat_set_swap_at(int v) { s_swap_at = v; }
+const char *pat_swap_at_name(int v) {
+    static const char *const N[] = {"BAR", "2 BARS", "4 BARS", "TRK 1 END"};
+    return v >= 0 && v < 4 ? N[v] : "?";
+}
+const char *pat_swap_when(void) { return "next bar"; }
 uint32_t pat_snapshot(pattern_t *d) {
     *d = g_pat;
     return s_swaps;

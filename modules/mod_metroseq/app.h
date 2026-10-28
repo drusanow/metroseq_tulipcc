@@ -37,11 +37,17 @@ void pat_unlock(void);
 void pat_store(const pattern_t *src);
 void pat_load(pattern_t *dst);
 
-// A new pattern (a preset, PASTE, a project) comes in on the top of TRK 1's
-// sequence, so a change always lands on the start of a loop; at once while
-// stopped. The tempo stays as it is. UI task.
+// A new pattern (a preset, PASTE, a project) comes in at the switch point
+// (pat_swap_at(): the next bar by default, in time with every other app)
+// and both tracks start over there; at once while stopped. The tempo stays
+// as it is. UI task.
 void pat_swap(const pattern_t *p);
-bool pat_swap_pending(void);     // one is waiting for the top
+bool pat_swap_pending(void);     // one is waiting for its switch point
+// where: SWAP_AT_BAR / 2BARS / 4BARS / TRK1 (engine/seq_clock.h); kept in NVS
+int pat_swap_at(void);
+void pat_set_swap_at(int v);
+const char *pat_swap_at_name(int v);   // "BAR", "2 BARS", "4 BARS", "TRK 1 END"
+const char *pat_swap_when(void);       // "next bar" ... (for messages)
 bool pat_swap_cancel(void);      // false: too late, it has gone in
 // pat_load(), plus pat_swap_count() at that instant
 uint32_t pat_snapshot(pattern_t *dst);

@@ -78,7 +78,7 @@ void pat_load(pattern_t *dst) {
     pat_unlock();
 }
 
-// --- a new pattern on the top of the sequence -------------------------------------------
+// --- a new pattern at its switch point (the next bar, by default) -----------------------------
 
 static pattern_t s_next;
 static volatile uint32_t s_swaps;
@@ -91,7 +91,7 @@ static void put_next(void) {
     s_swaps++;
 }
 
-// rt task, at the top of TRK 1's sequence (seq_clock.c; lock held)
+// rt task, at the switch point (seq_clock.c; lock held)
 static void rt_swap(void) {
     bool merge = g_pat.merge_cv;
     put_next();
@@ -114,6 +114,24 @@ void pat_swap(const pattern_t *p) {
 }
 
 bool pat_swap_pending(void) { return s_sc.swap_pending; }
+
+int pat_swap_at(void) { return s_sc.swap_at; }
+
+void pat_set_swap_at(int v) {
+    if (v < 0 || v >= SWAP_AT_COUNT) return;
+    s_sc.swap_at = (uint8_t)v;   // one byte: the rt task reads it on its next pulse
+    storage_set_swap_at(v);
+}
+
+const char *pat_swap_when(void) {
+    static const char *const W[SWAP_AT_COUNT] = {"next bar", "next 2 bars", "next 4 bars", "TRK 1 end"};
+    return s_sc.swap_at < SWAP_AT_COUNT ? W[s_sc.swap_at] : "";
+}
+
+const char *pat_swap_at_name(int v) {
+    static const char *const N[SWAP_AT_COUNT] = {"BAR", "2 BARS", "4 BARS", "TRK 1 END"};
+    return v >= 0 && v < SWAP_AT_COUNT ? N[v] : "?";
+}
 
 bool pat_swap_cancel(void) {
     pat_lock();
@@ -419,7 +437,7 @@ static void m_init(void) {
     preview_init();
     seq_engine_init(&s_eng, &g_pat, esp_random());
     s_sc = (seq_clock_t){.e = &s_eng, .acts = &s_acts, .lock = pat_lock, .unlock = pat_unlock,
-                         .flush = flush, .swap = rt_swap};
+                         .flush = flush, .swap = rt_swap, .swap_at = (uint8_t)storage_swap_at()};
     seq_clock_sink(&s_sc, &s_inner);
     mod_metroseq.sink = s_inner;
     mod_metroseq.sink.start = m_start;
@@ -439,6 +457,8 @@ static cJSON *m_patch_save(void) {
     for (int i = 0; i < NUM_PRESETS; i++)
         cJSON_AddItemToArray(a, storage_preset_get(i, &p) ? pattern_to_json(&p) : cJSON_CreateNull());
     cJSON_AddBoolToObject(o, "preview", preview_enabled());
+    static const char *const SW[SWAP_AT_COUNT] = {"bar", "2bars", "4bars", "trk1"};
+    cJSON_AddStringToObject(o, "preset_switch", SW[pat_swap_at()]);
     return o;
 }
 
@@ -469,6 +489,12 @@ static void m_patch_load(const cJSON *o) {
     preset_set_current(cJSON_IsNumber(v) ? v->valueint : 0);
     v = cJSON_GetObjectItemCaseSensitive(o, "preview");
     if (cJSON_IsBool(v)) preview_set_enabled(cJSON_IsTrue(v));
+    v = cJSON_GetObjectItemCaseSensitive(o, "preset_switch");
+    if (cJSON_IsString(v)) {
+        static const char *const SW[SWAP_AT_COUNT] = {"bar", "2bars", "4bars", "trk1"};
+        for (int i = 0; i < SWAP_AT_COUNT; i++)
+            if (!strcmp(v->valuestring, SW[i])) pat_set_swap_at(i);
+    }
     if (ui_built()) ui_refresh_all();
 }
 

@@ -425,6 +425,7 @@ static void do_swap(void) {
 static void test_swap_on_top(void) {
     setup();
     sc.swap = do_swap;
+    sc.swap_at = SWAP_AT_TRK1;
     int64_t t = 0;
     const int64_t period = 20833;
     static int64_t gates[64];
@@ -456,9 +457,46 @@ static void test_swap_on_top(void) {
     printf("new pattern: waits for the top of TRK 1's sequence, then starts from stage 1\n");
 }
 
+// SWAP_AT_BAR (the default) and 2 BARS: with TRK 1 at 7 steps and TRK 2 at
+// 5, a preset queued on 1/16 number 3 comes in on the bar line (16, or 32),
+// where every other app's downbeat is - and both tracks start over there,
+// each from its first stage.
+static void test_swap_on_bar(void) {
+    for (int bars = 1; bars <= 2; bars++) {
+        setup();
+        sc.swap = do_swap;
+        sc.swap_at = bars == 1 ? SWAP_AT_BAR : SWAP_AT_2BARS;
+        pat.tracks[0].length = 7;
+        pat.tracks[1].length = 5;
+        int64_t t = 0;
+        const int64_t period = 20833;
+        static int64_t gates[64];
+        run_clocks(&t, 6, period, 0, gates, 0, NULL);
+        send(MP_START, 0, t);
+        run_clocks(&t, 1 + 6 * 3, period, 0, gates, 0, NULL);   // 1/16 number 3
+        next_pat = pat;
+        next_pat.stages[0].pitch = PITCH_STEPS;
+        seq_clock_swap(&sc);
+        swaps = 0;
+        int clocks = 1 + 6 * 3, when = -1;
+        for (int k = 0; k < 6 * 40 && when < 0; k++) {
+            run_clocks(&t, 1, period, 0, gates, 0, NULL);
+            clocks++;
+            if (swaps) when = (clocks - 1) / 6;   // the 1/16 it came in on
+        }
+        // (TRK 2 plays REV by default: its first stage of 5 is the 5th)
+        CHECK(when == 16 * bars && eng.tr[0].cur_stage == 0 && eng.tr[1].cur_stage == 4,
+              "%d bar(s): swapped on 1/16 %d, stages %d %d", bars, when, eng.tr[0].cur_stage,
+              eng.tr[1].cur_stage);
+    }
+    printf("new pattern: on the next bar (or 2-bar) line whatever the track lengths (7 / 5), "
+           "both tracks from stage 1\n");
+}
+
 int main(void) {
     test_clock_follow();
     test_swap_on_top();
+    test_swap_on_bar();
     test_stop_continue_spp();
     test_tempo_change_and_dropout();
     test_master_equivalence();

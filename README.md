@@ -50,7 +50,8 @@ tried on a Tulip).
   with rock-solid timing. Design and verification are in
   **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**.
   * 10 presets under the tracks. They save themselves as you edit, and a new one comes
-    in on the top of TRK 1's sequence ([§9](docs/INVESTIGATION.md#9-follow-up-presets-on-the-seq-page-range-midi-out)).
+    in on the next bar, in time with the other apps (SET → Preset switch: BAR, 2 BARS,
+    4 BARS or TRK 1 END; [§9](docs/INVESTIGATION.md#9-follow-up-presets-on-the-seq-page-range-midi-out)).
   * A RANGE of 1-4 octaves for the sliders, MIDI out per track, and a MIDI CC per MOD
     lane.
 * **[GinTonix](docs/GINTONIX.md)**: a port of

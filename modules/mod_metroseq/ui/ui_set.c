@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "engine/seq_clock.h"
 #include "platform/preview_audio.h"
 #include "platform/storage.h"
 #include "sdkconfig.h"
@@ -23,7 +24,7 @@
 static struct {
     lv_obj_t *panel;
     lv_obj_t *root_lbl, *scale_lbl, *boct_lbl, *range_lbl, *notes_lbl;
-    ui_btn_t *cv_btn, *merge_btn, *clock_btn, *clkout_btn, *audio_btn;
+    ui_btn_t *cv_btn, *merge_btn, *clock_btn, *clkout_btn, *audio_btn, *switch_btn;
     lv_obj_t *cv_status;
     lv_obj_t *info, *proj_lbl;
     lv_obj_t *timing_lbl;
@@ -122,6 +123,12 @@ static void toggle_clock_out(intptr_t a) {
 
 static void touch_cal(intptr_t a) { tulip_touchcal_start(NULL); }
 
+// where a preset comes in while playing: BAR -> 2 BARS -> 4 BARS -> TRK 1 END
+static void step_switch(intptr_t a) {
+    pat_set_swap_at((pat_swap_at() + 1) % SWAP_AT_COUNT);
+    set_page_refresh();
+}
+
 static void toggle_audio(intptr_t a) {
     preview_set_enabled(!preview_enabled());
     set_page_refresh();
@@ -151,12 +158,14 @@ static void project_load(intptr_t a) {
         info("no project selected");
         return;
     }
-    // into the current preset, on the top of the sequence; its tempo too
+    // into the current preset, at the switch point; its tempo too
     ui_set_bpm(p.bpm);
     pat_swap(&p);
-    char msg[48];
-    snprintf(msg, sizeof msg, "%s '%s'", g_status.playing ? "on the top:" : "loaded",
-             storage_project_name(S.project_idx));
+    char msg[80];
+    if (g_status.playing)
+        snprintf(msg, sizeof msg, "'%s': %s", storage_project_name(S.project_idx), pat_swap_when());
+    else
+        snprintf(msg, sizeof msg, "loaded '%s'", storage_project_name(S.project_idx));
     info(msg);
 }
 
@@ -221,6 +230,7 @@ void set_page_refresh(void) {
     bool out = studio_clock_out() && !midi;
     ui_btn_set_text(S.clkout_btn, midi ? "(MIDI IN)" : out ? "ON" : "OFF");
     ui_btn_set_color(S.clkout_btn, out ? C_PLAY : C_BTN_DK);
+    ui_btn_set_text(S.switch_btn, pat_swap_at_name(pat_swap_at()));
     ui_btn_set_text(S.audio_btn, preview_enabled() ? "ON" : "OFF");
     ui_btn_set_color(S.audio_btn, preview_enabled() ? C_PLAY : C_BTN_DK);
     refresh_projects();
@@ -268,7 +278,8 @@ void set_page_create(lv_obj_t *parent) {
     S.clkout_btn = button(p, 2, 1, "MIDI clk out", "OFF", toggle_clock_out);
     S.audio_btn = button(p, 2, 2, "Preview", "ON", toggle_audio);
     button(p, 2, 3, "Touch", "CALIBRATE", touch_cal);
-    hint(p, "One clock for every app. MIDI OUT\nper track is on the TRK page.", COL_X(2), ROW_Y(4) + 4);
+    // a preset (or PASTE, a project) comes in here while playing
+    S.switch_btn = button(p, 2, 4, "Preset switch", "BAR", step_switch);
 
     ui_panel(p, COL_X(0), 316, 1024 - 2 * COL_X(0), 1, C_PANEL2, 0);
 

@@ -312,9 +312,19 @@ alongside other apps (`studio`). What changed for its timing:
   playing, and it **keeps every change** - steps, tracks, MOD lanes, quantiser - saved to
   its slot as you go. There's no SAVE button. Numbers holding a pattern are white,
   empty ones dim.
-* **Another number comes in on the top of the sequence.** It blinks yellow until TRK 1
-  next starts its sequence over, then both tracks start from stage 1 with it.
-  * "The top" is the pulse on which TRK 1 enters the stage PLAY starts on. That follows
+* **Another number comes in at the switch point** (SET → **Preset switch**). It blinks
+  yellow until then, and on that 1/16 both tracks start over from their first stage
+  with it.
+  * **BAR** (the default), **2 BARS**, **4 BARS:** the next bar line of the master
+    clock (song position 16, 32 ... or every 32 / 64). That's the downbeat every Studio
+    app plays to, so a switch stays in time with the drums whatever the two tracks'
+    lengths and clock divisions are. With TRK 1 at 7 steps and TRK 2 at 5, it still
+    lands on the bar. Waiting for both tracks to meet wouldn't be practical: 7 and 5
+    only line up every 35 steps.
+  * **TRK 1 END:** the earlier behaviour, when TRK 1 next starts its sequence over. It
+    is the quickest, but with an odd length or division it drifts against the bar.
+  * The setting is kept in flash and in Studio patches.
+  * TRK 1 END's "top" is the pulse on which TRK 1 enters the stage PLAY starts on. That follows
     its ORDER, LENGTH, SKIPs and pulse counts, so FWD, REV and PEND all switch where the
     loop starts again (`seq_engine_top_next()`).
   * RAND and BROWN have no start, so with those it's the next bar.
@@ -323,8 +333,8 @@ alongside other apps (`studio`). What changed for its timing:
   * The swap happens in the real-time task, under the pattern lock, on the 1/16 itself
     (`seq_clock.c`), so it can't be late.
 * **An empty number** takes a copy of what's playing, and becomes the one you edit.
-* **COPY / PASTE** are at the end of the row. PASTE replaces the current preset, also on
-  the top of the sequence.
+* **COPY / PASTE** are at the end of the row. PASTE replaces the current preset, also at
+  the switch point.
 * **The tempo isn't part of a preset any more:** switching pattern never jumps the
   tempo (that's the Studio's). Loading a named project still sets it.
 * Writes go to flash once edits have been quiet for 1.5 s, and wait for STOP
@@ -364,8 +374,10 @@ rescan, routing, status) and **SETUP** (clock, preview, touch calibration). Then
   nothing is sent with the CC off.
 * **The top of the sequence:** checked for FWD, FWD with skips and multi-pulse stages,
   PEND, REV at 1/8, and RAND (on the bar).
-* **Swap:** through the master clock, a new pattern waits for the top, then stage 1
-  plays its pitch; when stopped, it starts on the next PLAY.
+* **Swap:** through the master clock, a new pattern waits for the top (TRK 1 END), then
+  stage 1 plays its pitch; when stopped, it starts on the next PLAY.
+* **Swap on the bar:** with TRK 1 at 7 steps and TRK 2 at 5, a pattern queued on 1/16
+  number 3 comes in on 1/16 16 (BAR) or 32 (2 BARS), both tracks on their first stage.
 * **JSON** (Studio patches): 50 random patterns round-trip exactly; missing keys
   default and junk is clamped.
 * The Python parity test still matches on all 6 patterns.
