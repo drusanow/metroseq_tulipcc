@@ -1,10 +1,18 @@
 # Tulip Studio: several apps at once, on one clock
 
-**Studio** runs several apps on the Tulip at the same time, all playing to **one master
-clock**: metroseq (CV sequencer), GinTonix and Drumster9 (drum machines), Sloe and
-Wavetron (synths). You switch
-between their screens with the **blue square** in the top-right corner, as on the
-original Tulip. The apps you aren't looking at keep playing.
+**Tulip Studio** is one firmware holding every app: metroseq (CV sequencer), GinTonix and
+Drumster9 (drum machines), Sloe and Wavetron (synths). The same apps run two ways:
+
+* **On their own:** a tile each on the launcher's start page.
+* **In the Studio:** the STUDIO tile. The apps you switch on run at the same time, all
+  playing to **one master clock**.
+  * Every app starts **OFF**, and only those you switch on use any CPU, RAM or audio
+    time.
+  * You switch between their screens with the **blue square** in the top-right corner,
+    as on the original Tulip.
+  * The apps you aren't looking at keep playing.
+
+New apps slot into both: see **[APPS.md](APPS.md)**.
 
 * **One tempo, one transport.** PLAY anywhere starts everything on the same downbeat.
   MIDI clock, Start / Stop / Continue, Song Position and MMC drive every app at once.
@@ -13,7 +21,9 @@ original Tulip. The apps you aren't looking at keep playing.
 * **Internal routing.** A metroseq track can play Sloe or Wavetron on the Tulip, go out of MIDI OUT,
   or keep its own preview sound. metroseq's SLIDE becomes a glide on the synth.
 
-![Studio home](img/studio_1_home.png)
+| Studio home: apps switched on | At start: every app off |
+|---|---|
+| ![Studio home](img/studio_1_home.png) | ![all off](img/studio_0_home_all_off.png) |
 
 | GinTonix | Sloe |
 |---|---|
@@ -25,9 +35,10 @@ original Tulip. The apps you aren't looking at keep playing.
 
 ## 1. Using it
 
-From the launcher, tap **studio**.
+From the launcher's start page, tap **STUDIO**. (Tap an app's own tile to run it on its
+own instead.)
 
-* **Blue square:** the next running app, then the Studio home page, round and round.
+* **Blue square:** the next app that is on, then the Studio home page, round and round.
   Hold it to go straight to the home page.
 * **Red square:** the Studio home page. On the home page itself, the red square goes
   back to the launcher. Leaving stops the transport and waits for any save in progress.
@@ -41,11 +52,14 @@ From the launcher, tap **studio**.
   * **Clock source:** **INT** or **MIDI**.
   * **CLK OUT:** sends MIDI clock and Start/Stop from the internal clock.
   * **MMC:** MMC IN when following MIDI, MMC OUT when running on the internal clock.
-* **APPS:** a tile for each app, with its role tags.
-  * **OPEN/SHOW** goes to the app.
-  * **CLOSE** stops it. A closed sequencer drops its gates low and goes silent; a
-    closed drum machine or synth stops sounding.
-* **ROUTING:** where each sequencer track's notes go:
+* **APPS:** a tile for each app, with its role tags, four at a time. The `<` `>` arrows
+  show the next four.
+  * **ON / OFF** switches the app on (it starts the first time) or off. An app that is
+    off drops its gates low, stops sounding and gets no CPU time.
+  * **SHOW** goes to an app that is on.
+  * The **mixer strip** (level, mute, peak meter) shows while the app is on.
+* **ROUTING:** where the notes of each track of every sequencer that is on go. Four
+  tracks show at a time, with arrows for more; a new sequencer app gets rows too:
   * **OWN SOUND:** metroseq's preview voice.
   * **SLOE** (or any synth app).
   * **MIDI OUT:** on a channel you choose, which defaults to the track number.
@@ -56,17 +70,20 @@ From the launcher, tap **studio**.
   * master volume;
   * audio load and underrun count;
   * the last MIDI message received;
+  * **CV CLOCK:** the drum machines' clock on the Mabee DAC (its rate and VOUT1 are on
+    each drum machine's settings page);
   * **TOUCH CAL**.
 
-Everything here (tempo, clock, routes, open apps) is saved and comes back the next time
-you open Studio, which always starts on this home page.
+The tempo, clock and routes are saved and come back the next time you open Studio.
+Studio always starts on this home page, with every app off. A Studio patch switches on
+the apps it was saved with.
 
 ### Studio patches
 
 A Studio patch is everything at once, saved as one JSON file you can load later:
 
 * the tempo and master volume;
-* which apps are open, and each app's mixer level and mute;
+* which apps are on, and each app's mixer level and mute;
 * the routing of every sequencer track (to a synth, or MIDI OUT and its channel);
 * each app's own state:
   * **metroseq:** the pattern, all 10 presets and the one playing, the preview on/off;
@@ -102,28 +119,45 @@ Tulip, not the patch.
 
 | Tag | Gets from the runtime | Gives | Example |
 |---|---|---|---|
-| **SEQUENCER** | the master clock's pulses (exact time of every 1/16) and transport | CV out (`CV`); note tracks to route to a synth or MIDI OUT | metroseq |
-| **DRUMS** | the clock's timeline and transport; MIDI notes and CCs on its channel | audio | GinTonix, Drumster9 |
+| **SEQUENCER** | the master clock's pulses (exact time of every 1/16) and transport; MIDI clock in and out | CV gate + pitch (`CV`); note tracks to route to a synth or MIDI OUT | metroseq |
+| **DRUMS** | the clock's timeline and transport; MIDI clock in and out; MIDI notes and CCs on its channel; the **CV clock** | audio | GinTonix, Drumster9 |
 | **SYNTH** | routed notes from sequencer tracks; MIDI notes on its channel | audio | Sloe, Wavetron |
+
+**The CV clock** is the runtime's, for every drum machine:
+
+* **Where:** the Mabee DAC at 0x59. VOUT0 is a square-wave clock locked to the grid
+  (1/16, 1/8 or 1/4). VOUT1 gives a reset pulse each bar, or stays high while running.
+* **When:** while a drum machine is on, unless a sequencer that drives the DACs is on
+  too. Its gate and pitch win.
+* **Settings:** set it on any drum machine's settings page or the Studio home page.
 
 Two flags sit alongside the role. `AUDIO` means the app renders into the mix. `CV` means
 the app owns the Mabee DACs, and only one app may.
 
-## 3. Why the apps are built together into one image
+## 3. One image for every app
 
 Two separate `.bin` apps can't run at the same time. The ESP32-S3 boots **one** firmware
 image, and it has no memory protection to keep two separately-built programs apart. So
-Studio's apps are **modules**: ESP-IDF components compiled into one image. Each module
-still builds on its own too: `apps/metroseq` and `apps/gintonix` are exactly that, the
-same module inside the same runtime.
+every app is a **module**: an ESP-IDF component in `modules/`, compiled into the one
+Tulip Studio image (`apps/studio` → `studio.bin`).
 
-| Approach | Status |
-|---|---|
-| Modules compiled together (this) | Real-time safe, one image per combination, every module also usable alone. Adding a module means rebuilding the image; you push it over Wi-Fi as usual. |
-| Load modules at runtime from `/files` (Espressif's `elf_loader`) | A possible next step. It needs a fixed module interface: the `tmod_t` here is that interface. The cost: a crashing module takes the image down, and everything must be exported to the loader. |
+The same image runs an app on its own or the Studio:
 
-The full image ships three Studio-runtime apps: **studio** (all three modules),
-**metroseq** and **gintonix** (each on its own). The launcher shows them all.
+* **The launcher says which.** Before booting it, it stores a **boot mode** in NVS
+  (`tulip_boot_mode_set()`): an app's name, or `""` for the Studio.
+* **On its own:** `studio_run()` cuts the module list down to that app and starts it at
+  once. It has its own settings and the red square goes back to the launcher.
+* **In the Studio:** nothing starts until you switch it on.
+
+**How the launcher knows what's inside:**
+
+* The build generates the app list from every `modules/*/app.json`.
+* It places that list (a **manifest**, `tulip/app_manifest.h`) right after the app
+  description in `studio.bin`.
+* The launcher reads it and shows a tile per app.
+
+**Adding an app** is a folder in `modules/` and a rebuild; nothing else is edited.
+[APPS.md](APPS.md) covers it, and why apps aren't loaded at run time instead.
 
 ## 4. How it works
 
@@ -207,48 +241,13 @@ of the I2C bus. Touch is read only in gaps longer than a worst-case touch read.
 
 LVGL allocates from the 8 MB PSRAM (`components/tulip_hal/src/lv_mem_psram.c`), as on
 the original Tulip. Several apps' screens therefore fit without eating the internal RAM
-that DMA, stacks and the real-time code need. The Studio image uses 153 KB of 342 KB
-internal RAM statically, and 0.95 MB of its 2 MB app slot.
+that DMA, stacks and the real-time code need. The Studio image (all five apps) uses 265 KB of 342 KB
+internal RAM statically, and about 1.0 MB of its 1.5 MB app slot.
 
-## 5. Writing a module
+## 5. Writing an app
 
-A module is an ESP-IDF component (`modules/mod_<name>`) that exports one `tmod_t`
-(`components/tulip_studio/include/studio/studio.h`). Fill in only what you need:
-
-```c
-tmod_t mod_mine = {
-    .name = "mine", .title = "MINE", .blurb = "what it does",
-    .role = TMOD_SYNTH, .flags = TMOD_F_AUDIO | TMOD_F_NOTES_IN,
-    .init = init,                // boot: load settings, allocate
-    .render = render,            // audio task: ADD n frames into l / r
-    .note = note,                // routed notes (from rt / midi tasks): queue them
-    .midi = midi,                // MIDI IN channel messages (midi task): queue them
-    .ui_create = ui_create,      // build your screen on the lv_obj_t given
-    .ui_poll = ui_poll,          // every UI pass (visible or not)
-    .patch_save = patch_save,    // Studio patches: your state as a cJSON object...
-    .patch_load = patch_load,    // ...and back (even before your screen is built)
-};
-```
-
-* Put `studio_chrome(parent, x, y, size)` in your header, for the two squares.
-* A sequencer fills `.sink` (clock callbacks), `rt_next_due` / `rt_advance` (its own
-  events) and `rt_cmd` (commands from its UI via `studio_cmd()`).
-* A clocked audio app reads `studio_timeline()` each block and converts song positions
-  to frames with `tclock_tl_time()` and `studio_frame_at()` (as `gx_mod.c` does).
-
-**Rules** (they're what keep the timing solid):
-
-* **Never block in `rt_*`, `render`, `note` or `midi`.** Hand work over through a queue,
-  a single-word write, or a lock held for microseconds; never wait on another task.
-* **Keep your global names to yourself.** All modules link into one image, and two
-  `show_page()`s won't link. Make functions `static` or prefix them. GinTonix's UI does
-  it with a block of `#define`s in `gx_ui_int.h`.
-* **Keep data in `/files/<name>/`** (`studio_files_root()`) and settings in your own
-  files or NVS namespace.
-
-**To build a combination,** list the modules in `apps/studio/main/main.c` (and in its
-`CMakeLists.txt` `REQUIRES`), then `idf.py build`. To build one module alone, copy
-`apps/gintonix`.
+See **[APPS.md](APPS.md)**: the `tmod_t`, what each role gets, the rules that keep the
+timing solid, and a template to copy (`docs/templates/mod_example`).
 
 ## 6. Verified here, and what needs a Tulip
 
@@ -274,7 +273,9 @@ tmod_t mod_mine = {
   * every preset sounds and releases;
   * a routed SLIDE glides;
   * voice stealing and all-notes-off work.
-* **Builds:** all four images build with no warnings.
+* **Builds:** the launcher and Tulip Studio build with no warnings. Adding a module folder
+  (the template) puts it in the image and the manifest with no other edit.
+* **The manifest:** parsed from a real `studio.bin` (`tests/test_launcher.c`).
 * **Screens:** every screen renders.
 
 **Needs a Tulip:**

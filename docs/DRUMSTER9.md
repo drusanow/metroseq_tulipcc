@@ -4,9 +4,11 @@ A native port of the Python sketch `reference/drumster9/drumster9v6.py`, the 32-
 machine for the original Tulip, with the **Gamma 9001 samples** built in. It's a Studio
 app (role: **DRUMS**), so it runs in two ways:
 
-* **studio:** alongside metroseq, GinTonix, Sloe and Wavetron, on one clock.
-* **drumster9:** on its own, from the launcher's home page. On its own it also sends a
-  **CV clock** on the Mabee DAC, as the sketch did.
+* **STUDIO:** alongside the other apps, on one clock.
+* **DRUMSTER9:** on its own, from its tile on the launcher's start page.
+
+Either way it sends a **CV clock** on the Mabee DAC, as the sketch did (in the Studio,
+unless metroseq has the DACs).
 
 | SEQ | KITS |
 |---|---|
@@ -67,12 +69,18 @@ next time; settings are in `settings.json`.
 
 * **MIDI IN** (SET page, default channel 11): GM drum notes play the lanes - 36 kick,
   38 snare, 39 clap, 42 closed hat, 46 open hat, 49 cymbal, 45 tom - with velocity.
-* **Clock:** Drumster9 plays to the Studio master clock: internal, or MIDI clock with
-  Start / Stop / Song Position (the sketch's SYNC EXT).
-* **CV clock** (on its own only: in Studio the DACs belong to metroseq). The Mabee DAC
-  at 0x59, as the sketch drove it: VOUT0 a square-wave clock locked to the step grid,
-  1/16, 1/8 or 1/4; VOUT1 a one-step reset pulse on every downbeat, or high while
-  running. A soft start eases VOUT0 up and down once, a second after start-up.
+* **Clock:** Drumster9 plays to the master clock: internal, or MIDI clock with Start /
+  Stop / Song Position (the sketch's SYNC EXT).
+* **MIDI clock out:** on the SET page.
+* **CV clock:** the runtime's, which every drum machine gets.
+  * **Output:** the Mabee DAC at 0x59, as the sketch drove it. VOUT0 is a square-wave
+    clock locked to the step grid (1/16, 1/8 or 1/4). VOUT1 is a one-step reset pulse
+    on every downbeat, or high while running.
+  * **Soft start:** VOUT0 eases up and down once, a second after start-up.
+  * **When:** on its own, and in the Studio unless metroseq (whose gate and pitch use
+    the DACs) is on too.
+  * **Where to set it:** the SET page, the CV button on the SEQ page, or the Studio
+    home page.
 
 ## What's different from the sketch, and why
 

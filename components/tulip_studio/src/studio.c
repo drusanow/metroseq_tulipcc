@@ -254,13 +254,18 @@ void studio_run(const tmod_t *const *mods, int n) {
 // UI task. Starting an app: its init() here, then rt_init() and the
 // tempo in the rt task (HC_START), then it's switched on - the queue keeps
 // that order, so no hook of it runs before it's ready.
+// the UI must not lose these: the rt queue is drained every ~1 ms
+static void post_sure(uint8_t kind, int i, int32_t arg) {
+    for (int k = 0; k < 50 && !rt_post(kind, (uint8_t)i, 0, arg); k++) vTaskDelay(1);
+}
+
 void studio_module_set_on(int i, bool on) {
     if (i < 0 || i >= g_nmods || s_on[i] == on) return;
     s_on[i] = on;
     if (on && !g_started[i]) {
         g_started[i] = true;   // (UI side: init() never runs twice)
         if (g_mods[i]->init) g_mods[i]->init();
-        rt_post(HC_START, (uint8_t)i, 0, 0);
+        post_sure(HC_START, i, 0);
     }
-    rt_post(HC_ENABLE, (uint8_t)i, 0, on);
+    post_sure(HC_ENABLE, i, on);
 }

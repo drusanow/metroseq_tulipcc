@@ -1,20 +1,42 @@
-# Tulip CC in C: launcher, Studio, metroseq, GinTonix, Wavetron, Drumster9
+# TULIP STUDIO
 
 Native ESP32-S3 firmware for the [Tulip Creative Computer](https://github.com/shorepine/tulipcc),
-with no MicroPython or AMY:
+with no MicroPython or AMY.
 
-* **[The launcher](docs/LAUNCHER.md)**: a minimal dark home screen.
-  * Launch C apps from tiles or a file browser; make folders, rename and delete.
+**One set of apps, two ways to run them.** The start page has two sections:
+
+* **The apps, each on its own:** metroseq (sequencer), GinTonix and Drumster9 (drum
+  machines), Sloe and Wavetron (synths).
+* **STUDIO:** the same apps together on one clock. Every app starts off; you switch on
+  the ones you want.
+
+The apps are written once, against one runtime ([docs/APPS.md](docs/APPS.md)). Each
+gets the clock, MIDI and CV services for its role:
+
+| Role | Gets |
+|---|---|
+| **Drum machines** | a CV clock out, MIDI IN, MIDI clock out (and in) |
+| **Sequencers** | CV gate and pitch, MIDI OUT, MIDI clock in and out |
+| **Synths** | MIDI IN, and notes from any sequencer track routed to them |
+
+**Adding an app:** drop a folder in `modules/`, rebuild, upload. It then appears on the
+start page and in the Studio.
+
+* **[The launcher](docs/LAUNCHER.md)**: the start page.
+  * Tiles for each app, STUDIO, and any other app images; a file browser to make
+    folders, rename and delete.
   * Join Wi-Fi, then move apps and files from **any browser** (`http://tulip.local`) or
     a terminal (`tools/tulip.py`).
   * Settings, touch calibration, and a **debug REPL** (on screen and over USB serial).
 * **[Studio](docs/STUDIO.md)**: several apps running **at the same time on one clock**.
+  * ON / OFF for each app on the home page. Only the apps that are on use CPU, RAM or
+    audio time.
   * Switch between them with the blue square, as on the original Tulip.
   * Tags: metroseq (SEQUENCER, CV), GinTonix and Drumster9 (DRUMS), Sloe and Wavetron
     (SYNTH).
   * One tempo and transport, MIDI clock / Start / Stop for all of them.
   * A mixer on the Studio home page: a level, mute and peak meter per app.
-  * metroseq's tracks can play Sloe or Wavetron on the Tulip, or go out of MIDI OUT.
+  * Every sequencer's tracks can play Sloe or Wavetron on the Tulip, or go out of MIDI OUT.
   * **Studio patches:** the whole session - tempo, apps, mixer, routing, and every app's
     sounds, patterns and presets - saved to one JSON file and loaded back.
 * **metroseq**: a port of [`reference/metropolix_tulip.py`](reference/metropolix_tulip.py).
@@ -32,7 +54,7 @@ with no MicroPython or AMY:
   * Native DSP, sample-accurate on the master clock.
   * Your Python kit and bank files load as they are.
 * **Sloe**: a small subtractive synth, the destination for routed sequencer tracks.
-  It is a page inside Studio, and also an app on its own, played from MIDI IN.
+  It runs in the Studio or on its own, played from MIDI IN.
   Factory presets plus your own: **SAVE**, **SAVE AS** and **DEL** in its header (yours
   are marked `*`, in `/files/sloe/presets.json`).
 * **[Wavetron](docs/WAVETRON.md)**: a port of the AMYboard sketch `wavetron_v1_2.py`, a
@@ -46,9 +68,10 @@ with no MicroPython or AMY:
   * The 155 Gamma 9001 samples from AMY built in (TR-808, TR-909, Linn 9000, MR-12, Tokyo
     Synthetics, 80s Power, Percussion, Acoustic, Extras), in 7 kits you can re-sample.
   * A-J patterns that switch on the downbeat, 4 FX buses (reverb, echo, filter, drive,
-    EQ), a mixer, and a CV clock when it runs on its own.
+    EQ), a mixer, and the CV clock.
   * The sketch's project file loads as it is.
-* **hello**: the smallest standalone app, as a template.
+* **[`docs/templates/mod_example`](docs/templates/mod_example)**: the smallest complete
+  app, as a template.
 
 | Studio home | GinTonix |
 |---|---|
@@ -67,22 +90,16 @@ with no MicroPython or AMY:
 ```
 launcher/              the launcher (factory app): UI, file browser, Wi-Fi, web server, REPL
   main/web/            the web app (one self-contained HTML file)
-apps/studio/           metroseq + GinTonix + Sloe + Wavetron + Drumster9 together, on one clock
-apps/metroseq/         metroseq on its own
-apps/gintonix/         GinTonix on its own
-apps/sloe/             Sloe on its own (a synth played from MIDI IN)
-apps/wavetron/         Wavetron on its own
-apps/drumster9/        Drumster9 on its own (with a CV clock)
-apps/hello/            minimal standalone app template
-modules/               the Studio apps (each an ESP-IDF component)
+apps/studio/           Tulip Studio: every app in modules/, run on its own or together
+modules/               the apps (each an ESP-IDF component with an app.json)
   mod_metroseq/        the CV sequencer: engine/ (host-tested), platform/, ui/
   mod_gintonix/        the drum machine: core/ (host-tested), ui/
   mod_sloe/            the synth
   mod_wavetron/        the wavetable synth: core/ (host-tested), ui/
   mod_drumster9/       the sample drum machine: core/ (host-tested), ui/
 components/
-  tulip_studio/        the Studio runtime: master clock, real-time task, MIDI in/out,
-                       audio mixer, routing, the squares and the home page
+  tulip_studio/        the runtime: master clock, real-time task, MIDI in/out, the CV
+                       clock, audio mixer, routing, the squares and the home page
   tulip_hal/           shared by every app: panel + LVGL, touch + calibration, I2C,
                        /files, settings, app lifecycle; partition table + base sdkconfig
   lvgl/                LVGL v9.2.2 (git submodule)
@@ -99,9 +116,8 @@ third_party/gamma9001/ the drum samples, from AMY (MIT)
 
 ## Flash it
 
-**First time:** flash the full image over USB. It holds the launcher with **studio** (all
-the apps together) and **metroseq**, **gintonix**, **sloe**, **wavetron** and
-**drumster9** on their own, preloaded, plus Drumster9's samples:
+**First time:** flash the full image over USB. It holds the launcher and Tulip Studio
+(every app, preloaded), plus Drumster9's samples:
 
 ```sh
 pip install esptool
@@ -111,7 +127,9 @@ esptool.py --chip esp32s3 write_flash 0x0 tulip-full.bin    # top (UART) USB por
 This replaces the Tulip firmware **and the area where Tulip keeps `/user`**, so back
 your files up first. (Updating from an earlier image of this project keeps `/files`.
 Since Drumster9 the app slots are 1.5 MB and the samples have their own partition:
-flash the full image once, then push apps as before.) To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
+flash the full image once, then push `studio.bin` as before. The older per-app `.bin`
+copies in `/files/apps` are hidden from the start page; delete them in FILES if you
+like.) To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
 the same way.
 
 **After that:** put apps on over Wi-Fi from the launcher's WI-FI page. See
@@ -125,19 +143,21 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 6 apps + samples)
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + Tulip Studio + samples)
 
-# develop an app:
+# develop an app (a folder in modules/, see docs/APPS.md):
 cd apps/studio && idf.py set-target esp32s3 && idf.py build
 ../../tools/tulip.py --pin <PIN> push build/studio.bin --launch
 ```
 
-**Apps are plain ESP-IDF `.bin` images** built on `components/tulip_hal/sdkconfig.tulip`.
-The launcher reads each app's name and version from the image itself. The reasons,
-and the rules an app must follow, are in [docs/LAUNCHER.md](docs/LAUNCHER.md#2-packaging-apps-recommendation).
-A Studio image combines **modules**; how to write one is in
-[docs/STUDIO.md](docs/STUDIO.md#5-writing-a-module). Don't `idf.py flash` an app,
-because that overwrites the launcher; push it instead.
+**Apps are modules** compiled into the one Tulip Studio image.
+* **Writing one:** what an app must provide to run both on its own and in the Studio,
+  and why apps are compiled in rather than loaded from files, is in
+  **[docs/APPS.md](docs/APPS.md)**.
+* **The image:** the launcher reads Tulip Studio's app list from `studio.bin` itself.
+  Other plain ESP-IDF `.bin` images still run from the start page
+  ([docs/LAUNCHER.md](docs/LAUNCHER.md#2-packaging-apps-recommendation)).
+* **Don't `idf.py flash` an app:** that overwrites the launcher. Push it instead.
 
 ## metroseq options (`idf.py menuconfig` → Metroseq)
 
@@ -156,9 +176,12 @@ because that overwrites the launcher; push it instead.
 * **MERGE T2>T1:** both tracks share 0x59, with TRK 1 taking priority.
 * **MIDI:**
   * **IN** (GPIO12): clock, transport and MMC go to every app when the clock is MIDI
-    (Studio home, or metroseq SET → Clock `MIDI`); notes and CCs go by channel.
-  * **OUT** (GPIO11): clock out, GinTonix pattern out, routed tracks, metroseq's MOD
-    lane CCs.
+    (Studio home, or any app's settings: Clock `MIDI`); notes and CCs go by channel.
+  * **OUT** (GPIO11): clock out (Studio home, or any app's settings), GinTonix pattern
+    out, routed tracks, metroseq's MOD lane CCs.
+* **CV clock** (drum machines): Mabee at 0x59, VOUT0 clock (1/16, 1/8, 1/4), VOUT1
+  reset each bar or run. It runs while a drum machine is on and metroseq isn't (metroseq
+  needs that DAC for TRK 1).
 * **Calibration:** measure VOUT1 at two notes and edit `CAL[]` in
   `modules/mod_metroseq/platform/cv_dac.c`.
 * **Power:** if the Tulip browns out at power-on with a DAC attached, power the DAC from

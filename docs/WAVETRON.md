@@ -4,9 +4,9 @@ A native port of the AMYboard sketch [`reference/wavetron/wavetron_v1_2.py`](../
 designed for a 1.5" OLED and eight encoders. It's a Studio app (role: **SYNTH**), so it
 runs in two ways:
 
-* **studio:** alongside metroseq, GinTonix and Sloe, on one clock. A metroseq track can play
-  it ([STUDIO.md](STUDIO.md)).
-* **wavetron:** on its own, from the launcher's home page.
+* **STUDIO:** alongside the other apps, on one clock. A metroseq track can play it
+  ([STUDIO.md](STUDIO.md)).
+* **WAVETRON:** on its own, from its tile on the launcher's start page.
 
 | OSC: the 3-D waterfall | MOD |
 |---|---|

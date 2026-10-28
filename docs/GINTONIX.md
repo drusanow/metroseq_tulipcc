@@ -1,11 +1,14 @@
 # GinTonix in C
 
 A native port of `reference/gintonix/gintonix.py`, the Microtonic-style drum machine
-for the Tulip, as a Studio app. It runs with no MicroPython or AMY. It's in the
-launcher two ways:
+for the Tulip, as a Tulip Studio app (role: **DRUMS**). It runs with no MicroPython or
+AMY, in two ways:
 
-* **gintonix:** on its own;
-* **studio:** together with metroseq and Sloe, on one clock ([STUDIO.md](STUDIO.md)).
+* **GINTONIX:** on its own, from its tile on the launcher's start page;
+* **STUDIO:** together with the other apps, on one clock ([STUDIO.md](STUDIO.md)).
+
+Its MIDI page has the clock, MIDI clock out and the CV clock (Mabee DAC 0x59: VOUT0
+clock, VOUT1 reset / run).
 
 | MAIN | SEQ |
 |---|---|

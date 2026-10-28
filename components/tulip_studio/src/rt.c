@@ -387,6 +387,7 @@ static void handle_cmd(const rt_msg_t *m, int64_t now) {
         int i = m->mod;
         if (i >= g_nmods) break;
         bool on = m->arg != 0;
+        if (on) start_module(i);   // (already, unless HC_START was lost)
         if (g_enabled[i] == on) break;
         g_enabled[i] = on;
         if (g_mods[i]->rt_enable) g_mods[i]->rt_enable(on, now);
