@@ -1,8 +1,8 @@
 # Tulip Studio: several apps at once, on one clock
 
 **Studio** runs several apps on the Tulip at the same time, all playing to **one master
-clock**: metroseq (CV sequencer), GinTonix (drum machine), Sloe and Wavetron
-(synths). You switch
+clock**: metroseq (CV sequencer), GinTonix and Drumster9 (drum machines), Sloe and
+Wavetron (synths). You switch
 between their screens with the **blue square** in the top-right corner, as on the
 original Tulip. The apps you aren't looking at keep playing.
 
@@ -74,7 +74,9 @@ A Studio patch is everything at once, saved as one JSON file you can load later:
     MIDI channel;
   * **Sloe:** the sound, its preset name and its MIDI channel;
   * **Wavetron:** the sound (its wavetables by path, as its own patches do), its name
-    and its MIDI channel.
+    and its MIDI channel;
+  * **Drumster9:** everything a Drumster9 project holds (the grid, the A-J patterns,
+    the kits and their samples, the buses, the mix), and its MIDI channel.
 
 On the home page: `<` `>` pick a patch, **LOAD** loads it, **SAVE** writes over the one
 picked, **SAVE AS...** asks for a name, and **DELETE** (tap twice) removes it.
@@ -101,7 +103,7 @@ Tulip, not the patch.
 | Tag | Gets from the runtime | Gives | Example |
 |---|---|---|---|
 | **SEQUENCER** | the master clock's pulses (exact time of every 1/16) and transport | CV out (`CV`); note tracks to route to a synth or MIDI OUT | metroseq |
-| **DRUMS** | the clock's timeline and transport; MIDI notes and CCs on its channel | audio | GinTonix |
+| **DRUMS** | the clock's timeline and transport; MIDI notes and CCs on its channel | audio | GinTonix, Drumster9 |
 | **SYNTH** | routed notes from sequencer tracks; MIDI notes on its channel | audio | Sloe, Wavetron |
 
 Two flags sit alongside the role. `AUDIO` means the app renders into the mix. `CV` means

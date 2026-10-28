@@ -160,12 +160,13 @@ lv_obj_t *studio_chrome(lv_obj_t *parent) {
 
 // --- the Studio home page ------------------------------------------------------------------
 
-// Up to 4 app tiles in a row; each carries the app's mixer strip and what
-// it takes from MIDI IN. With more than 4 apps, two rows of shorter tiles.
-#define TILE_COLS 4
-#define TILE_W 244
+// The app tiles in one row (4 across, or narrower for 5 or 6); each
+// carries the app's mixer strip and what it takes from MIDI IN.
 #define TILE_GAP 8
 #define TILES_Y 86
+static int s_cols, s_tile_w;
+#define TILE_COLS s_cols
+#define TILE_W s_tile_w
 
 static struct {
     lv_obj_t *play, *bpm, *clk_int, *clk_midi, *clk_out, *mmc, *status;
@@ -471,7 +472,9 @@ static void home_create(void) {
 
     // apps: a tile each - what it is, what it takes from MIDI IN, open /
     // close, and its mixer strip
-    bool compact = g_nmods > TILE_COLS;
+    s_cols = g_nmods <= 4 ? 4 : g_nmods;
+    s_tile_w = (1000 - (s_cols - 1) * TILE_GAP) / s_cols;
+    bool compact = false, narrow = s_tile_w < 230;
     int tile_h = compact ? 158 : 250;
     sw_label(s, "APPS", SW_F_LABEL, SW_ORANGE, 14, 64, 0, false);
     sw_label(s, "LEVEL into the master VOLUME, M mutes. MIDI IN: notes + CCs by channel; clock + "
@@ -483,7 +486,7 @@ static void home_create(void) {
         lv_obj_t *t = H.tile[i] = sw_box(s, x, y, TILE_W, tile_h, SW_BG, 4);
         lv_obj_set_style_border_width(t, 1, 0);
         lv_obj_set_style_border_color(t, sw_c(SW_LINE), 0);
-        sw_label(t, m->title, SW_F_MID, SW_TEXT, 10, 8, 0, false);
+        sw_label(t, m->title, narrow ? SW_F_LABEL : SW_F_MID, SW_TEXT, 10, narrow ? 12 : 8, 0, false);
         char tag[48];
         snprintf(tag, sizeof tag, "%s%s%s", studio_role_name(m->role),
                  (m->flags & TMOD_F_CV) ? "  CV" : "", (m->flags & TMOD_F_AUDIO) ? "  AUDIO" : "");
@@ -504,8 +507,9 @@ static void home_create(void) {
             lv_obj_set_height(H.midi_rows[i], 46);
             yb = 156;
         }
-        H.open_b[i] = sw_btn(t, "OPEN", 10, yb, 120, 36, SW_ORANGE, h_open, (void *)(intptr_t)i, NULL);
-        H.close_b[i] = sw_btn(t, "CLOSE", TILE_W - 100, yb, 90, 36, SW_RED, h_close,
+        int bw = narrow ? (TILE_W - 30) / 2 : 120, cw = narrow ? bw : 90;
+        H.open_b[i] = sw_btn(t, "OPEN", 10, yb, bw, 36, SW_ORANGE, h_open, (void *)(intptr_t)i, NULL);
+        H.close_b[i] = sw_btn(t, "CLOSE", TILE_W - 10 - cw, yb, cw, 36, SW_RED, h_close,
                               (void *)(intptr_t)i, NULL);
         if (m->flags & TMOD_F_AUDIO) mixer_strip(t, i, yb + 40);
     }

@@ -16,7 +16,7 @@ SRC = $(ENGINE)/seq_engine.c $(ENGINE)/seq_model.c $(ENGINE)/seq_clock.c $(HAL)/
       $(STUDIO)/src/tclock.c $(STUDIO)/src/midi_parse.c
 HDR = $(wildcard $(ENGINE)/*.h)
 
-all: build/test_engine build/test_midi_touch build/test_launcher build/test_studio build/test_gx build/gx_tool build/test_sloe build/test_wavetron build/sim
+all: build/test_engine build/test_midi_touch build/test_launcher build/test_studio build/test_gx build/gx_tool build/test_sloe build/test_wavetron build/test_d9 build/gamma9001.bin build/sim
 
 build/test_engine: test_engine.c $(SRC) $(HDR) $(ENGINE)/seq_json.c
 	@mkdir -p build
@@ -52,6 +52,17 @@ build/test_wavetron: test_wavetron.c $(WT_SRC) $(wildcard $(WT)/*.h)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I$(WT) -I$(CJSON) -o $@ test_wavetron.c $(WT_SRC) -lm
 
+D9 = ../modules/mod_drumster9/core
+D9_SRC = $(D9)/d9_samples.c $(D9)/d9_model.c $(D9)/d9_seq.c $(D9)/d9_dsp.c $(D9)/d9_json.c \
+         $(CJSON)/cJSON.c $(STUDIO)/src/tclock.c
+build/test_d9: test_d9.c $(D9_SRC) $(wildcard $(D9)/*.h)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I$(D9) -I$(CJSON) -o $@ test_d9.c $(D9_SRC) -lm
+
+build/gamma9001.bin: ../tools/make_d9_samples.py ../third_party/gamma9001/manifest.json
+	@mkdir -p build
+	python3 ../tools/make_d9_samples.py $@
+
 build/sim: sim.c $(SRC) $(HDR)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ sim.c $(SRC) -lm
@@ -64,6 +75,7 @@ test: all
 	./build/test_gx
 	./build/test_sloe
 	./build/test_wavetron
+	./build/test_d9 build/gamma9001.bin
 	python3 gx_parity.py
 	python3 py_parity.py
 

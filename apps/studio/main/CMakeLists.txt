@@ -1,1 +1,1 @@
-idf_component_register(SRCS "main.c" REQUIRES mod_metroseq mod_gintonix mod_sloe mod_wavetron tulip_studio)
+idf_component_register(SRCS "main.c" REQUIRES mod_metroseq mod_gintonix mod_drumster9 mod_sloe mod_wavetron tulip_studio)

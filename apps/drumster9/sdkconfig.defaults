@@ -1,0 +1,4 @@
+# drumster9 on top of components/tulip_hal/sdkconfig.tulip (the shared base).
+# The device partition table; apps are installed into its OTA slots by the
+# launcher - build with idf.py build and push the .bin, don't idf.py flash.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../components/tulip_hal/partitions_tulip.csv"

@@ -1,4 +1,4 @@
-# Tulip CC in C: launcher, Studio, metroseq, GinTonix, Wavetron
+# Tulip CC in C: launcher, Studio, metroseq, GinTonix, Wavetron, Drumster9
 
 Native ESP32-S3 firmware for the [Tulip Creative Computer](https://github.com/shorepine/tulipcc),
 with no MicroPython or AMY:
@@ -10,7 +10,8 @@ with no MicroPython or AMY:
   * Settings, touch calibration, and a **debug REPL** (on screen and over USB serial).
 * **[Studio](docs/STUDIO.md)**: several apps running **at the same time on one clock**.
   * Switch between them with the blue square, as on the original Tulip.
-  * Tags: metroseq (SEQUENCER, CV), GinTonix (DRUMS), Sloe and Wavetron (SYNTH).
+  * Tags: metroseq (SEQUENCER, CV), GinTonix and Drumster9 (DRUMS), Sloe and Wavetron
+    (SYNTH).
   * One tempo and transport, MIDI clock / Start / Stop for all of them.
   * A mixer on the Studio home page: a level, mute and peak meter per app.
   * metroseq's tracks can play Sloe or Wavetron on the Tulip, or go out of MIDI OUT.
@@ -40,6 +41,13 @@ with no MicroPython or AMY:
     effects.
   * The 3-D wavetable waterfall, and your own WAV wavetables from `/files`.
   * The sketch's patch files load as they are.
+* **[Drumster9](docs/DRUMSTER9.md)**: a port of the Python sketch
+  `reference/drumster9/drumster9v6.py`, a 32-step drum machine.
+  * The 155 Gamma 9001 samples from AMY built in (TR-808, TR-909, Linn 9000, MR-12, Tokyo
+    Synthetics, 80s Power, Percussion, Acoustic, Extras), in 7 kits you can re-sample.
+  * A-J patterns that switch on the downbeat, 4 FX buses (reverb, echo, filter, drive,
+    EQ), a mixer, and a CV clock when it runs on its own.
+  * The sketch's project file loads as it is.
 * **hello**: the smallest standalone app, as a template.
 
 | Studio home | GinTonix |
@@ -49,6 +57,8 @@ with no MicroPython or AMY:
 | ![wavetron](docs/img/wavetron_1_osc.png) | ![sloe](docs/img/sloe_1.png) |
 | **metroseq** | **Launcher** |
 | ![seq](docs/img/1_seq.png) | ![home](docs/img/launcher_1_home.png) |
+| **Drumster9** | **Drumster9: a sample from any bank** |
+| ![drumster9](docs/img/drumster9_1_seq.png) | ![samples](docs/img/drumster9_3_samples.png) |
 
 *(Device screens are rendered from the real UI code by `tools/ui_preview`.)*
 
@@ -57,17 +67,19 @@ with no MicroPython or AMY:
 ```
 launcher/              the launcher (factory app): UI, file browser, Wi-Fi, web server, REPL
   main/web/            the web app (one self-contained HTML file)
-apps/studio/           metroseq + GinTonix + Sloe + Wavetron together, on one clock
+apps/studio/           metroseq + GinTonix + Sloe + Wavetron + Drumster9 together, on one clock
 apps/metroseq/         metroseq on its own
 apps/gintonix/         GinTonix on its own
 apps/sloe/             Sloe on its own (a synth played from MIDI IN)
 apps/wavetron/         Wavetron on its own
+apps/drumster9/        Drumster9 on its own (with a CV clock)
 apps/hello/            minimal standalone app template
 modules/               the Studio apps (each an ESP-IDF component)
   mod_metroseq/        the CV sequencer: engine/ (host-tested), platform/, ui/
   mod_gintonix/        the drum machine: core/ (host-tested), ui/
   mod_sloe/            the synth
   mod_wavetron/        the wavetable synth: core/ (host-tested), ui/
+  mod_drumster9/       the sample drum machine: core/ (host-tested), ui/
 components/
   tulip_studio/        the Studio runtime: master clock, real-time task, MIDI in/out,
                        audio mixer, routing, the squares and the home page
@@ -78,16 +90,18 @@ components/
 tools/tulip.py         push/pull/launch over Wi-Fi (Python standard library only)
 tools/make_full_image.sh   build everything into tulip-full.bin
 tools/gen_gx_factory.py    GinTonix factory kits -> C (from gintonic_presets.py)
+tools/make_d9_samples.py   the Gamma 9001 samples -> the samples partition image
 tools/ui_preview/      render the on-device UIs to PNGs on a PC
 tests/                 host tests and parity checks against the Python originals
-reference/             the original MicroPython sketches (metroseq, GinTonix, Wavetron)
+reference/             the original MicroPython sketches (metroseq, GinTonix, Wavetron, Drumster9)
+third_party/gamma9001/ the drum samples, from AMY (MIT)
 ```
 
 ## Flash it
 
 **First time:** flash the full image over USB. It holds the launcher with **studio** (all
-the apps together) and **metroseq**, **gintonix**, **sloe** and **wavetron** on their own,
-preloaded:
+the apps together) and **metroseq**, **gintonix**, **sloe**, **wavetron** and
+**drumster9** on their own, preloaded, plus Drumster9's samples:
 
 ```sh
 pip install esptool
@@ -95,7 +109,9 @@ esptool.py --chip esp32s3 write_flash 0x0 tulip-full.bin    # top (UART) USB por
 ```
 
 This replaces the Tulip firmware **and the area where Tulip keeps `/user`**, so back
-your files up first. (Updating from an earlier image of this project keeps `/files`.) To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
+your files up first. (Updating from an earlier image of this project keeps `/files`.
+Since Drumster9 the app slots are 1.5 MB and the samples have their own partition:
+flash the full image once, then push apps as before.) To go back, flash a [Tulip release](https://github.com/shorepine/tulipcc/releases)
 the same way.
 
 **After that:** put apps on over Wi-Fi from the launcher's WI-FI page. See
@@ -109,7 +125,7 @@ You need [ESP-IDF v5.3.x](https://docs.espressif.com/projects/esp-idf/en/v5.3.2/
 ```sh
 git clone --recursive <this repo>        # or: git submodule update --init
 . $IDF_PATH/export.sh
-tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 5 apps)
+tools/make_full_image.sh                 # -> tulip-full.bin (launcher + 6 apps + samples)
 
 # develop an app:
 cd apps/studio && idf.py set-target esp32s3 && idf.py build

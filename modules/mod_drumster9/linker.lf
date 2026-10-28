@@ -1,0 +1,8 @@
+# Drumster9's audio path runs from internal RAM, as the other apps' do: the
+# apps execute from PSRAM through a cache both cores share, and a redraw on
+# core 0 would otherwise push the sound code out of it mid-block.
+[mapping:mod_drumster9]
+archive: libmod_drumster9.a
+entries:
+    d9_dsp (noflash)
+    d9_seq (noflash)

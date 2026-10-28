@@ -121,3 +121,31 @@ int studio_mix_level(int m) { return s_lv[m]; }
 void studio_mix_set_mute(int m, bool on) { s_mute = on ? s_mute | (1u << m) : s_mute & ~(1u << m); }
 bool studio_mix_muted(int m) { return s_mute & (1u << m); }
 float studio_mix_peak(int m) { return m == 1 ? 0.5f : (m == 0 ? 0.05f : 0); }
+
+// --- Drumster9's hardware: the samples partition is the image the tests pack -----------------
+#include <stdio.h>
+
+#include "esp_partition.h"
+#include "studio/studio_hw.h"
+
+i2c_master_bus_handle_t studio_i2c_bus(void) { return NULL; }
+
+static esp_partition_t s_samples = {.address = 0xB50000, .size = 0x400000,
+                                    .path = "../../../tests/build/gamma9001.bin"};
+
+const esp_partition_t *esp_partition_find_first(esp_partition_type_t t, esp_partition_subtype_t s,
+                                                const char *label) {
+    FILE *f = fopen(s_samples.path, "rb");
+    if (!f) return NULL;
+    fclose(f);
+    return &s_samples;
+}
+
+esp_err_t esp_partition_read(const esp_partition_t *p, size_t off, void *dst, size_t n) {
+    FILE *f = fopen(p->path, "rb");
+    if (!f) return ESP_FAIL;
+    fseek(f, (long)off, SEEK_SET);
+    size_t got = fread(dst, 1, n, f);
+    fclose(f);
+    return got == n ? ESP_OK : ESP_FAIL;
+}

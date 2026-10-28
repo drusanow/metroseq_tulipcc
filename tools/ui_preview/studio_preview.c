@@ -13,6 +13,8 @@
 #include "mod_gintonix.h"
 #include "mod_sloe.h"
 #include "mod_wavetron.h"
+#include "mod_drumster9.h"
+#include "d9_app.h"
 #include "platform/preview_audio.h"
 #include "platform/storage.h"
 #include "studio_priv.h"
@@ -131,8 +133,9 @@ int main(void) {
 
     hx_init();
     hx_poll = shell_ui_poll;
-    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe, &mod_wavetron};
-    studio_run(mods, 4);
+    static const tmod_t *const mods[] = {&mod_metroseq, &mod_gintonix, &mod_sloe, &mod_wavetron,
+                                         &mod_drumster9};
+    studio_run(mods, 5);
     g_cfg.shown = -1;   // start on the home page
     g_cfg.bpm_x100 = 12400;
     studio_route_set(0, 0, 2);            // TRK 1 -> SLOE
@@ -289,6 +292,50 @@ int main(void) {
         hx_save(pages[k - 1]);
     }
     hx_tap(173, 28);
+
+    // Drumster9: playing, so the playhead and a pad light
+    studio_next_app();
+    hx_pump(100);
+    g_d9.bus[L_CHAT] = 1;
+    g_d9.bus[L_OHAT] = 1;
+    g_d9.bus[L_SNARE] = 2;
+    g_d9.kit_ovr[L_TOM] = 5;
+    g_d9.muted[L_CYMBAL] = 1;
+    g_d9s.playing = true;
+    g_d9s.step = 6;
+    g_d9s.hit_ms[L_KICK] = g_d9s.hit_ms[L_CHAT] = hx_now_ms();
+    g_d9s.load_pct = 4;
+    g_d9_next = 2;
+    g_d9.bank[1].used = 1;
+    g_d9.fx[1].rev_level = 0.35f;
+    g_d9.fx[1].filter = FT_LPF;
+    g_d9.fx[1].freq = 2400;
+    g_d9.fx[1].eq_h = 4;
+    g_d9_reload++;
+    hx_pump(60);
+    hx_save("drumster9_1_seq");
+    g_d9_next = -1;
+    hx_tap(440 + 1 * 64, 28);                 // KITS
+    hx_pump(100);
+    hx_save("drumster9_2_kits");
+    hx_tap(577, 64 + 64 + 21);                // CHANGE the kick
+    hx_pump(100);
+    hx_save("drumster9_3_samples");
+    hx_tap(956, 64 + 28);                     // BACK
+    hx_tap(440 + 2 * 64, 28);                 // FX
+    hx_pump(100);
+    hx_tap(12 + 104 + 49, 64 + 28);           // BUS 1
+    hx_pump(100);
+    hx_save("drumster9_4_fx");
+    hx_tap(440 + 3 * 64, 28);                 // MIX
+    g_d9s.peak = 0.5f;
+    hx_pump(100);
+    hx_save("drumster9_5_mix");
+    hx_tap(440 + 4 * 64, 28);                 // SET
+    hx_pump(100);
+    hx_save("drumster9_6_set");
+    hx_tap(440, 28);                          // back to SEQ
+
     // a Studio patch: SAVE AS... with its keyboard, then it's in the list
     studio_show_home();
     hx_pump(100);

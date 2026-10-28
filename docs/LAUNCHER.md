@@ -27,13 +27,19 @@ produces. It is built on the shared Tulip base (`components/tulip_hal`) and kept
 
 ```
  32 MB flash
- ┌──────────┬───────┬───────┬───────┬───────┬───────┬───────┬──────────────────────┐
- │ factory  │ ota_0 │ ota_1 │ ota_2 │ ota_3 │ ota_4 │ ota_5 │ storage (FAT)        │
- │ launcher │ app   │ app   │ app   │ app   │ app   │ app   │ /files ~16.7 MB      │
- │ 2 MB     │ slot  │ slot  │ slot  │ slot  │ slot  │ slot  │  /files/apps/*.bin   │
- └──────────┴───────┴───────┴───────┴───────┴───────┴───────┴──────────────────────┘
-   (2 MB each)                                            at 0xF50000, as before
+ ┌──────────┬───────┬───────┬───────┬───────┬───────┬───────┬─────────┬──────────────────────┐
+ │ factory  │ ota_0 │ ota_1 │ ota_2 │ ota_3 │ ota_4 │ ota_5 │ samples │ storage (FAT)        │
+ │ launcher │ app   │ app   │ app   │ app   │ app   │ app   │ drum    │ /files ~16.7 MB      │
+ │ 2 MB     │ slot  │ slot  │ slot  │ slot  │ slot  │ slot  │ samples │  /files/apps/*.bin   │
+ └──────────┴───────┴───────┴───────┴───────┴───────┴───────┴─────────┴──────────────────────┘
+              (1.5 MB each)                              4 MB      at 0xF50000, as before
 ```
+
+The **samples** partition holds Drumster9's 155 Gamma 9001 drum samples (4.1 MB,
+16-bit). It is read-only, written with the full image. The slots were 2 MB each
+before Drumster9; the biggest app, studio, is about 1 MB, so 1.5 MB leaves room, and
+`tools/make_full_image.sh` refuses an app that doesn't fit. `/files` didn't move, so
+flashing the new full image keeps your files.
 
 **Launching.** When you launch an app, the launcher checks whether one of the six
 **app slots** already holds that exact build (matched on the ELF SHA-256 the build
@@ -87,7 +93,7 @@ and `gintonix` on their own. The other approaches I considered:
    XIP from PSRAM. Use the device partition table. `apps/hello` shows the 10-line setup.
 2. Call `tulip_app_init()` at the top of `app_main()`, and give the user a way home:
    `tulip_exit_to_launcher()`.
-3. Fit in 2 MB (studio, with four apps, is 0.95 MB; the hello app 0.57 MB).
+3. Fit in 1.5 MB (studio, with five apps, is 1.0 MB; the hello app 0.57 MB).
 4. **Don't `idf.py flash` an app.** That would overwrite the launcher. Push it instead
    (below).
 
@@ -209,7 +215,7 @@ display doesn't stutter during transfers.
 
 Verified here without hardware:
 * **Builds:** launcher, metroseq and hello all build with no warnings. The launcher is
-  1.33 MB of its 2 MB slot.
+  1.4 MB of its 2 MB slot.
 * **Launcher logic (host tests):** path safety (escapes, bad names, truncation), app
   image parsing (including the real `metroseq.bin`), and slot selection.
 * **Transfer (end-to-end):** `tools/tulip.py` and the web app in headless Chromium,
