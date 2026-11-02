@@ -10,6 +10,8 @@ Every app in Tulip Studio is written once and runs two ways, with no extra code:
 
 This page is the contract an app must keep to work both ways.
 [`docs/templates/mod_example`](templates/mod_example) is a complete small app (a sine synth) to copy.
+Making one with Claude or another coding assistant? See
+[section 8](#8-making-an-app-with-an-ai-coding-assistant).
 
 ---
 
@@ -325,3 +327,87 @@ cJSON and a set of LVGL. `tools/tulip_abi.py list` prints it.
 3. Tap the EXAMPLE tile on the start page: it runs on its own.
 4. The serial log (`idf.py monitor` on the USB port) says what was loaded or why not:
    lines from `loader`.
+
+## 8. Making an app with an AI coding assistant
+
+Claude Code, and other assistants that can read and edit a repository, can write a
+whole app here.
+
+* **Context comes with the repo:** `CLAUDE.md` (also as `AGENTS.md`) gives the
+  assistant the rules on this page, the build commands and the don'ts.
+* **What the assistant can and can't do:** it can build the firmware, run the tests
+  and render the screens. It can't hear the sound or touch the screen. That part is
+  yours.
+
+### Getting set up
+
+1. Fork this repository on GitHub (or clone it).
+2. Open it in your assistant: Claude Code in a terminal or the desktop app,
+   [claude.ai/code](https://claude.ai/code) in a browser, or another tool.
+3. Without ESP-IDF on your computer, let the **cloud build** compile it:
+   * the build runs on every push to your fork (section 2);
+   * the assistant pushes a branch, and you download `studio.bin` from the run.
+
+### Asking for an app
+
+Say what it is, which role it has, what it does with MIDI and the clock, and what's on
+its screen. Point at the template and the closest existing app. Some prompts to start
+from:
+
+> **A synth.** Read CLAUDE.md and docs/APPS.md. Make `modules/mod_fmbell`: a 4-voice
+> FM bell synth (role synth), starting from docs/templates/mod_example. Two operators,
+> ratio and index controls, an envelope, and a level. Notes come from MIDI IN on a
+> settable channel and from routed sequencer tracks. Put the DSP in a `core/` folder
+> with a host test in `tests/`, like Sloe and tests/test_sloe.c. Use the shared
+> widgets, studio_io_panel() on a settings page, and Studio patch save / load. Build
+> apps/studio, run make -C tests test, and tell me what to try on the Tulip.
+
+> **A drum machine.** Read CLAUDE.md and docs/APPS.md. Make `modules/mod_tinybeat`: a
+> 16-step, 4-lane synth drum machine (role drums), using mod_gintonix as the guide
+> for playing to the clock's timeline (studio_timeline, tclock_tl_time,
+> studio_frame_at). GM notes 36 / 38 / 42 / 46 from MIDI IN play the lanes, and the
+> pattern can go out as MIDI notes. Put studio_cv_strip() on its page for the CV
+> clock.
+
+> **A sequencer.** Read CLAUDE.md and docs/APPS.md. Make `modules/mod_euclid`: a
+> 4-track Euclidean sequencer (role sequencer) with note outputs, so the Studio can
+> route each track to a synth or MIDI OUT. Steps, pulses, rotation and note per
+> track. Follow mod_metroseq for the clock sink (sink.pulse, start, stop) and
+> studio_note_out(). No CV: leave TMOD_F_CV off, metroseq has the DACs.
+
+Smaller steps work better than one huge request:
+1. the DSP core and its test;
+2. then the module;
+3. then the screen;
+4. then patches.
+
+Ask for one at a time and check each.
+
+### Checking what it made
+
+* **The firmware:** `cd apps/studio && idf.py build` finishes with no warnings. The
+  cloud build on GitHub is the same check.
+* **The tests:** `make -C tests test` passes, including the app's own test if it has
+  a core.
+* **The screens:** `make -C tools/ui_preview` renders them to PNGs. Ask the assistant
+  to add the app to the preview, then look at them before flashing.
+* **The rules:** ask it to check its own code against section 5 and the checklist in
+  section 6. Look for anything that blocks or allocates in `render`, and for names
+  that aren't `static`.
+* **On the Tulip:** push `studio.bin`, then:
+  * switch the app on in the Studio, play it, and watch AUDIO % and XRUN on the home
+    page;
+  * try it on its own from its tile on the start page;
+  * save a Studio patch, then load it back.
+
+When something's wrong on the device, describe what you heard or saw, and paste the
+serial log (`idf.py monitor`) if there is one. The assistant can't see the Tulip, so
+the details you give it are what it works from.
+
+### Sharing an app
+
+An app is just its folder in `modules/`. To share one:
+* **Into this project:** open a pull request with the folder.
+* **Separately:** hand out the folder, or its `.elf` from `tools/build_elf_app.sh`
+  (section 7, experimental).
+

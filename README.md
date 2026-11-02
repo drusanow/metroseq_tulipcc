@@ -19,6 +19,11 @@ gets the clock, MIDI and CV services for its role:
 | **Sequencers** | CV gate and pitch, MIDI OUT, MIDI clock in and out |
 | **Synths** | MIDI IN, and notes from any sequencer track routed to them |
 
+**Making your own app** (a synth, drum machine or sequencer): see
+**[docs/APPS.md](docs/APPS.md)**. It covers what an app needs, a template to copy, and
+how to have Claude or another coding assistant write one (§8; `CLAUDE.md` gives the
+assistant the project's rules).
+
 **Adding an app:** drop a folder in `modules/`, rebuild (on your computer, or in the
 cloud on every push to GitHub), upload `studio.bin`. It then appears on the start page
 and in the Studio.
