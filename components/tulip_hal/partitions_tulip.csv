@@ -1,0 +1,24 @@
+# Tulip CC device partition table (32 MB flash). Written once, with the launcher.
+#
+#   factory    the launcher
+#   ota_0..5   app slots (1.5 MB each: the biggest app, studio, is about 1.1 MB): the
+#              launcher copies an app image here and boots it; a slot that already
+#              holds the app is reused (instant launch)
+#   samples    Drumster9's Gamma 9001 drum samples (tools/make_d9_samples.py), read-only
+#   storage    FAT file store, /files on the device (apps live in /files/apps); at the
+#              same place as ever, so reflashing keeps your files
+#   nvs        settings; each app uses its own namespace ("tulip" is shared)
+#
+# Name,   Type, SubType, Offset,    Size
+nvs,      data, nvs,     0x9000,    0x40000
+otadata,  data, ota,     0x49000,   0x2000
+phy_init, data, phy,     0x4B000,   0x1000
+factory,  app,  factory, 0x50000,   0x200000
+ota_0,    app,  ota_0,   0x250000,  0x180000
+ota_1,    app,  ota_1,   0x3D0000,  0x180000
+ota_2,    app,  ota_2,   0x550000,  0x180000
+ota_3,    app,  ota_3,   0x6D0000,  0x180000
+ota_4,    app,  ota_4,   0x850000,  0x180000
+ota_5,    app,  ota_5,   0x9D0000,  0x180000
+samples,  data, 0x40,    0xB50000,  0x400000
+storage,  data, fat,     0xF50000,  0x10B0000

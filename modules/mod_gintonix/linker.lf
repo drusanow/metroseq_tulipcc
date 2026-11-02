@@ -1,0 +1,7 @@
+# GinTonix's per-block pattern player and voice engine run from internal RAM
+# (gx_voice_render already is), out of the UI's way.
+[mapping:mod_gintonix]
+archive: libmod_gintonix.a
+entries:
+    gx_engine (noflash)
+    gx_seq (noflash)

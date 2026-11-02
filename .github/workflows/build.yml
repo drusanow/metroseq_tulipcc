@@ -1,0 +1,72 @@
+# Builds Tulip Studio in the cloud, so adding an app needs no ESP-IDF on your
+# computer: push a new modules/mod_<name>/ folder (or any change), then
+# download studio.bin from the run's artifacts and push it to the Tulip:
+#
+#   tools/tulip.py --pin <PIN> push studio.bin --launch
+#
+# A tag v* also makes a GitHub release with the files attached.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.3.2
+    permissions:
+      contents: write   # the release on tags
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build the launcher, Tulip Studio and the full image
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          export IDF_COMPONENT_MANAGER=0
+          tools/make_full_image.sh
+          mkdir -p out
+          cp apps/studio/build/studio.bin out/
+          cp launcher/build/tulip_launcher.bin out/
+          cp tulip-full.bin out/
+
+      - name: Build the loadable example app (.elf)
+        shell: bash
+        run: |
+          command -v make || (apt-get update && apt-get install -y make)   # its fast build uses make
+          . "$IDF_PATH/export.sh"
+          export IDF_COMPONENT_MANAGER=0
+          tools/build_elf_app.sh docs/templates/mod_example out/
+
+      - name: Sizes
+        shell: bash
+        run: |
+          ls -l out
+          echo "### Built" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls -l out >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tulip-studio
+          path: out/
+          if-no-files-found: error
+
+      - name: Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests and parity checks against the Python originals
+        run: make -C tests test

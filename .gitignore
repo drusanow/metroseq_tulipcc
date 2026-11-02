@@ -1,8 +1,17 @@
-firmware/build/
-firmware/sdkconfig
-firmware/sdkconfig.old
-firmware/managed_components/
-firmware/dependencies.lock
+*/*/build/
+launcher/build/
+apps/*/sdkconfig
+apps/*/sdkconfig.old
+launcher/sdkconfig
+launcher/sdkconfig.old
+**/managed_components/
+**/dependencies.lock
 tests/build/
 tools/ui_preview/build/
 __pycache__/
+
+# merged flashable images (built locally / attached to releases)
+metroseq-*.bin
+tulip-*.bin
+**/build.log
+build/

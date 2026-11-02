@@ -1,0 +1,5 @@
+# metroseq's preview voices run from internal RAM, out of the UI's way.
+[mapping:mod_metroseq]
+archive: libmod_metroseq.a
+entries:
+    preview_audio (noflash)

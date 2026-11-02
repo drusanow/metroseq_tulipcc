@@ -1,0 +1,8 @@
+# Tulip Studio on top of components/tulip_hal/sdkconfig.tulip (the shared base).
+# The device partition table; apps are installed into its OTA slots by the
+# launcher - build with idf.py build and push the .bin, don't idf.py flash.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../components/tulip_hal/partitions_tulip.csv"
+
+# Apps loaded from /files/studio/apps: no network stack for them (it would add
+# ~100 KB); what they may call is tools/tulip_abi.py's list
+CONFIG_ELF_LOADER_ESPIDF_SYMBOLS=n
